@@ -26,3 +26,11 @@ type Output struct {
 func (o *Common) BindFlags(fs *pflag.FlagSet) {
 	fs.BoolVarP(&o.Debug, "debug", "d", false, "output debug logs")
 }
+
+type Workspace struct {
+	UserWorkspace string
+}
+
+func (w *Workspace) BindFlags(fs *pflag.FlagSet) {
+	fs.StringVarP(&w.UserWorkspace, "workspace", "w", ".", "workspace to use for artifact generation")
+}

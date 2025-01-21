@@ -50,6 +50,14 @@
             "uuid": "bb6420f5-146c-44c0-b708-79b96e7a009e",
             "source": "profiles/example/profile.json",
             "description": "My example profile.",
+            "set-parameters": [
+              {
+                "param-id": "param-1",
+                "values": [
+                  "value-2"
+                ]
+              }
+            ],
             "implemented-requirements": [
               {
                 "uuid": "ed2ac4e9-d16a-4fc5-bd3a-13484b6d8fef",
@@ -59,12 +67,7 @@
                   {
                     "name": "Rule_Id",
                     "ns": "https://oscal-compass.github.io/compliance-trestle/schemas/oscal/cd",
-                    "value": "etcd_cert_file"
-                  },
-                  {
-                    "name": "Rule_Id",
-                    "ns": "https://oscal-compass.github.io/compliance-trestle/schemas/oscal/cd",
-                    "value": "etcd_key_file"
+                    "value": "rule-1"
                   }
                 ]
               }

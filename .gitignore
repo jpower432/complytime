@@ -31,3 +31,6 @@ vendor/
 
 # testing workspace created by openscap-plugin
 user_workspace
+
+# Outputs
+assessment-plan.json
