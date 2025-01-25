@@ -76,6 +76,14 @@ cp docs/samples/sample-component-definition.json ~/.config/complytime/bundles
 ```
 
 ### Run ComplyTime
+
+#### Create an Assessment Plan
+```bash
+complytime plan "example"
+cat assessment-plan.json
+```
+
+#### Generate artifacts and Run
 ```bash
 complytime generate
 complytime scan
