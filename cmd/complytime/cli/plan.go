@@ -20,8 +20,8 @@ const assessmentPlanLocation = "assessment-plan.json"
 // PlanOptions defines options for the "plan" subcommand
 type planOptions struct {
 	*option.Common
-	workspace   *option.Workspace
-	frameworkID string
+	userWorkspace string
+	frameworkID   string
 }
 
 func setOptsPlanFromArgs(args []string, opts *planOptions) {
@@ -32,7 +32,7 @@ func setOptsPlanFromArgs(args []string, opts *planOptions) {
 
 // planCmd creates a new cobra.Command for the "plan" subcommand
 func planCmd(common *option.Common) *cobra.Command {
-	planOpts := &planOptions{Common: common, workspace: &option.Workspace{}}
+	planOpts := &planOptions{Common: common}
 	cmd := &cobra.Command{
 		Use:     "plan [flags] id",
 		Short:   "Generate a new assessment plan for a given compliance framework id.",
@@ -45,7 +45,8 @@ func planCmd(common *option.Common) *cobra.Command {
 			return runPlan(cmd, planOpts)
 		},
 	}
-	planOpts.workspace.BindFlags(cmd.Flags())
+
+	cmd.Flags().StringVarP(&planOpts.userWorkspace, "workspace", "w", ".", "workspace to use for artifact generation")
 	return cmd
 }
 
@@ -69,7 +70,7 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 		return err
 	}
 
-	filePath := filepath.Join(opts.workspace.UserWorkspace, assessmentPlanLocation)
+	filePath := filepath.Join(opts.userWorkspace, assessmentPlanLocation)
 	cleanedPath := filepath.Clean(filePath)
 
 	if err := os.WriteFile(cleanedPath, assessmentPlanData, 0640); err != nil {
