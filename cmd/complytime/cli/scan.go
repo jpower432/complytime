@@ -5,7 +5,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/oscal-compass/compliance-to-policy-go/v2/framework"
 	"github.com/oscal-compass/compliance-to-policy-go/v2/policy"
@@ -18,33 +17,34 @@ import (
 // scanOptions defined options for the scan subcommand.
 type scanOptions struct {
 	*option.Common
-	assessmentPlanPath string
+	complyTimeOpts *option.ComplyTime
 }
 
 // scanCmd creates a new cobra.Command for the version subcommand.
 func scanCmd(common *option.Common) *cobra.Command {
-	scanOpts := &scanOptions{Common: common}
-	return &cobra.Command{
-		Use:          "scan [flags] <assessment_plan_path>",
+	scanOpts := &scanOptions{
+		Common:         common,
+		complyTimeOpts: &option.ComplyTime{},
+	}
+	cmd := &cobra.Command{
+		Use:          "scan [flags]",
 		Short:        "Scan environment with assessment plan",
-		Example:      "complytime scan assessment-plan.json",
+		Example:      "complytime scan",
 		SilenceUsage: true,
-		Args:         cobra.RangeArgs(0, 1),
-		PreRun: func(cmd *cobra.Command, args []string) {
-			if len(args) == 1 {
-				scanOpts.assessmentPlanPath = filepath.Clean(args[0])
-			}
-		},
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runScan(cmd, scanOpts)
 		},
 	}
+	scanOpts.complyTimeOpts.BindFlags(cmd.Flags())
+	return cmd
 }
 
 func runScan(cmd *cobra.Command, opts *scanOptions) error {
-	// Adding this message to the user for now because assessment Plans are unused
-	if opts.assessmentPlanPath != "" {
-		_, _ = fmt.Fprintf(opts.Out, "OSCAL Assessment Plans are not supported yet...\nThe file %s will not be used.\n", opts.assessmentPlanPath)
+
+	planSettings, err := getPlanSettingsForWorkspace(opts.complyTimeOpts)
+	if err != nil {
+		return err
 	}
 
 	// Create the application directory if it does not exist
@@ -68,7 +68,7 @@ func runScan(cmd *cobra.Command, opts *scanOptions) error {
 	// Ensure all the plugins launch above are cleaned up
 	defer manager.Clean()
 
-	allResults, err := manager.AggregateResults(cmd.Context(), plugins)
+	allResults, err := manager.AggregateResults(cmd.Context(), plugins, planSettings)
 	if err != nil {
 		return err
 	}

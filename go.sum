@@ -21,10 +21,10 @@ github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UF
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/clarketm/json v1.17.1 h1:U1IxjqJkJ7bRK4L6dyphmoO840P6bdhPdbbLySourqI=
 github.com/clarketm/json v1.17.1/go.mod h1:ynr2LRfb0fQU34l07csRNBTcivjySLLiY1YzQqKVfdo=
-github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250123224002-6a78532340fa h1:/LhR8hVBgfY6yVBxv8ut6EtOFvgi/FpDmqp3cvtoAvM=
-github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250123224002-6a78532340fa/go.mod h1:FqlbZGRPhGtvTvpQqP0+VrTcdNeVB0TfaamIPNcVTlk=
-github.com/complytime/oscal-sdk-go v0.0.0-20250124003740-5570f632e3d8 h1:JtRnWz0BxjjAbvjLOTqkaOhsZhJERaUSZVX6Skqw+Hk=
-github.com/complytime/oscal-sdk-go v0.0.0-20250124003740-5570f632e3d8/go.mod h1:O922y+Za9/ez0jKTR3/97BilPnrjabtFJ6rCVhHk37s=
+github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250128200120-f27fee1a891c h1:iZw2tq2R6TxqzKTMkNqUmKCI2xgR9KaXAg53ILFhOds=
+github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250128200120-f27fee1a891c/go.mod h1:oyNjCAtFj4XNCZO7+02mb1kPCTXL4IOK6oN8Qy2Tjeo=
+github.com/complytime/oscal-sdk-go v0.0.0-20250125144051-7723a7b6b06b h1:F3tqX70f1WSdGrOnSFlc0AU/QiGxBKw6MfmC/ZX0wdE=
+github.com/complytime/oscal-sdk-go v0.0.0-20250125144051-7723a7b6b06b/go.mod h1:O922y+Za9/ez0jKTR3/97BilPnrjabtFJ6rCVhHk37s=
 github.com/coreos/fcct v0.5.0 h1:f/z+MCoR2vULes+MyoPEApQ6iluy/JbXoRi6dahPItQ=
 github.com/coreos/fcct v0.5.0/go.mod h1:cbE+j77YSQwFB2fozWVB3qsI2Pi3YiVEbDz/b6Yywdo=
 github.com/coreos/go-json v0.0.0-20230131223807-18775e0fb4fb h1:rmqyI19j3Z/74bIRhuC59RB442rXUazKNueVpfJPxg4=

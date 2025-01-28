@@ -3,10 +3,12 @@
 package cli
 
 import (
-	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/oscal-compass/oscal-sdk-go/settings"
 	"github.com/spf13/cobra"
 
 	"github.com/oscal-compass/oscal-sdk-go/transformers"
@@ -20,8 +22,8 @@ const assessmentPlanLocation = "assessment-plan.json"
 // PlanOptions defines options for the "plan" subcommand
 type planOptions struct {
 	*option.Common
-	userWorkspace string
-	frameworkID   string
+	complyTimeOpts *option.ComplyTime
+	frameworkID    string
 }
 
 func setOptsPlanFromArgs(args []string, opts *planOptions) {
@@ -32,7 +34,10 @@ func setOptsPlanFromArgs(args []string, opts *planOptions) {
 
 // planCmd creates a new cobra.Command for the "plan" subcommand
 func planCmd(common *option.Common) *cobra.Command {
-	planOpts := &planOptions{Common: common}
+	planOpts := &planOptions{
+		Common:         common,
+		complyTimeOpts: &option.ComplyTime{},
+	}
 	cmd := &cobra.Command{
 		Use:     "plan [flags] id",
 		Short:   "Generate a new assessment plan for a given compliance framework id.",
@@ -45,8 +50,7 @@ func planCmd(common *option.Common) *cobra.Command {
 			return runPlan(cmd, planOpts)
 		},
 	}
-
-	cmd.Flags().StringVarP(&planOpts.userWorkspace, "workspace", "w", ".", "workspace to use for artifact generation")
+	planOpts.complyTimeOpts.BindFlags(cmd.Flags())
 	return cmd
 }
 
@@ -65,17 +69,34 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 		return err
 	}
 
-	assessmentPlanData, err := json.MarshalIndent(assessmentPlan, "", " ")
-	if err != nil {
-		return err
-	}
-
-	filePath := filepath.Join(opts.userWorkspace, assessmentPlanLocation)
+	filePath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentPlanLocation)
 	cleanedPath := filepath.Clean(filePath)
 
-	if err := os.WriteFile(cleanedPath, assessmentPlanData, 0600); err != nil {
-		return err
+	if err := complytime.WritePlan(assessmentPlan, cleanedPath); err != nil {
+		return fmt.Errorf("error writing assessment plan to %s: %w", cleanedPath, err)
 	}
 
 	return nil
+}
+
+// getPlanSettingsForWorkspace loads the assessment plan for the workspace and create new
+// Settings from that data.
+func getPlanSettingsForWorkspace(opts *option.ComplyTime) (settings.Settings, error) {
+	// Load settings from assessment plan
+	filePath := filepath.Join(opts.UserWorkspace, assessmentPlanLocation)
+	cleanedPath := filepath.Clean(filePath)
+
+	planSettings, err := complytime.PlanSettings(cleanedPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return planSettings, fmt.Errorf("error: assessment plan does exist in workspace %s: %w\n\nDid you run the plan command?",
+				opts.UserWorkspace,
+				err)
+		}
+		if errors.Is(err, complytime.ErrNoActivities) {
+			return planSettings, fmt.Errorf("assessment plan %s does not have associated activities: %w", cleanedPath, err)
+		}
+		return planSettings, err
+	}
+	return planSettings, nil
 }

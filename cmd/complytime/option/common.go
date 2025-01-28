@@ -26,3 +26,15 @@ type Output struct {
 func (o *Common) BindFlags(fs *pflag.FlagSet) {
 	fs.BoolVarP(&o.Debug, "debug", "d", false, "output debug logs")
 }
+
+// ComplyTime options are configurations needed for the ComplyTime CLI to run.
+// They are less generic the Common options and would only be used in a subset of
+// commands.
+type ComplyTime struct {
+	UserWorkspace string
+}
+
+// BindFlags populate ComplyTime options from user-specified flags.
+func (o *ComplyTime) BindFlags(fs *pflag.FlagSet) {
+	fs.StringVarP(&o.UserWorkspace, "workspace", "w", ".", "workspace to use for artifact generation")
+}

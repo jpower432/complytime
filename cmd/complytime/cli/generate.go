@@ -8,46 +8,40 @@ import (
 	"github.com/oscal-compass/compliance-to-policy-go/v2/framework"
 	"github.com/spf13/cobra"
 
-	"path/filepath"
-
 	"github.com/complytime/complytime/cmd/complytime/option"
 	"github.com/complytime/complytime/internal/complytime"
 )
 
-// generateOptions defines options for the generate subcommand
+// generateOptions defines options for the "generate" subcommand
 type generateOptions struct {
 	*option.Common
-	assessmentPlanPath string
+	complyTimeOpts *option.ComplyTime
 }
 
-func setOptsFromArgs(args []string, opts *generateOptions) {
-	if len(args) == 1 {
-		opts.assessmentPlanPath = filepath.Clean(args[0])
-	}
-}
-
-// generateCmd creates a new cobra.Command for the generate subcommand
+// generateCmd creates a new cobra.Command for the "generate" subcommand
 func generateCmd(common *option.Common) *cobra.Command {
-	generateOpts := &generateOptions{Common: common}
-	return &cobra.Command{
-		Use:     "generate",
+	generateOpts := &generateOptions{
+		Common:         common,
+		complyTimeOpts: &option.ComplyTime{},
+	}
+	cmd := &cobra.Command{
+		Use:     "generate [flags]",
 		Short:   "Generate PVP policy from an assessment plan",
-		Example: "complytime generate assessment-plan.json",
-		Args:    cobra.RangeArgs(0, 1),
-		PreRun: func(cmd *cobra.Command, args []string) {
-			setOptsFromArgs(args, generateOpts)
-		},
+		Example: "complytime generate",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runGenerate(cmd, generateOpts)
 		},
 	}
+	generateOpts.complyTimeOpts.BindFlags(cmd.Flags())
+	return cmd
 }
 
 func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 
-	// Adding this message to the user for now because assessment Plans are unused
-	if opts.assessmentPlanPath != "" {
-		_, _ = fmt.Fprintf(opts.Out, "OSCAL Assessment Plans are not supported yet...\nThe file %s will not be used.\n", opts.assessmentPlanPath)
+	planSettings, err := getPlanSettingsForWorkspace(opts.complyTimeOpts)
+	if err != nil {
+		return err
 	}
 
 	// Create the application directory if it does not exist
@@ -71,10 +65,10 @@ func runGenerate(cmd *cobra.Command, opts *generateOptions) error {
 	// Ensure all the plugins launch above are cleaned up
 	defer manager.Clean()
 
-	err = manager.GeneratePolicy(cmd.Context(), plugins)
+	err = manager.GeneratePolicy(cmd.Context(), plugins, planSettings)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(opts.Out, "Policy generation completed successfully.")
+	_, _ = fmt.Fprintf(opts.Out, "Policy generation completed successfully.")
 	return nil
 }
