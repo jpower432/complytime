@@ -73,7 +73,7 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 	filePath := filepath.Join(opts.userWorkspace, assessmentPlanLocation)
 	cleanedPath := filepath.Clean(filePath)
 
-	if err := os.WriteFile(cleanedPath, assessmentPlanData, 0640); err != nil {
+	if err := os.WriteFile(cleanedPath, assessmentPlanData, 0600); err != nil {
 		return err
 	}
 
