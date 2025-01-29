@@ -3,10 +3,13 @@
 package complytime
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	oscalTypes "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-2"
+	"github.com/oscal-compass/oscal-sdk-go/extensions"
+	"github.com/oscal-compass/oscal-sdk-go/generators"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +28,7 @@ func TestPlan(t *testing.T) {
 		},
 	}
 
-	err := WritePlan(&testPlan, testPlanPath)
+	err := WritePlan(&testPlan, "testid", testPlanPath)
 	require.NoError(t, err)
 
 	_, err = PlanSettings(testPlanPath)
@@ -42,9 +45,25 @@ func TestPlan(t *testing.T) {
 	}
 	testPlan.LocalDefinitions = &localDefs
 
-	err = WritePlan(&testPlan, testPlanPath)
+	err = WritePlan(&testPlan, "testid", testPlanPath)
 	require.NoError(t, err)
 
 	_, err = PlanSettings(testPlanPath)
 	require.NoError(t, err)
+
+	// read plan to ensure it has the expected props
+	testFile, err := os.Open(testPlanPath)
+	require.NoError(t, err)
+	defer testFile.Close()
+
+	ap, err := generators.NewAssessmentPlan(testFile)
+	require.NoError(t, err)
+
+	wantProp := oscalTypes.Property{
+		Name:  extensions.FrameworkProp,
+		Value: "testid",
+		Ns:    extensions.TrestleNameSpace,
+	}
+	require.NotNil(t, ap.Metadata.Props)
+	require.Contains(t, *ap.Metadata.Props, wantProp)
 }

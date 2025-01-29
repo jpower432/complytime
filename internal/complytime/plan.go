@@ -9,12 +9,24 @@ import (
 	"os"
 
 	oscalTypes "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-2"
+	"github.com/oscal-compass/oscal-sdk-go/extensions"
 	"github.com/oscal-compass/oscal-sdk-go/generators"
 	"github.com/oscal-compass/oscal-sdk-go/settings"
 )
 
 // WritePlan writes an AssessmentPlan to a given path location with consistency.
-func WritePlan(plan *oscalTypes.AssessmentPlan, planLocation string) error {
+func WritePlan(plan *oscalTypes.AssessmentPlan, frameworkId string, planLocation string) error {
+	// Add the framework property needed for ComplyTime
+	if plan.Metadata.Props == nil {
+		plan.Metadata.Props = &[]oscalTypes.Property{}
+	}
+	frameworkProperty := oscalTypes.Property{
+		Name:  extensions.FrameworkProp,
+		Value: frameworkId,
+		Ns:    extensions.TrestleNameSpace,
+	}
+	*plan.Metadata.Props = append(*plan.Metadata.Props, frameworkProperty)
+
 	// To ensure we can easily read the plan once written, include under
 	// OSCAL Model type to include the top-level "assessment-plan" key.
 	oscalModels := oscalTypes.OscalModels{
@@ -37,6 +49,8 @@ func PlanSettings(assessmentPlanPath string) (settings.Settings, error) {
 	if err != nil {
 		return settings.Settings{}, err
 	}
+	defer file.Close()
+
 	plan, err := generators.NewAssessmentPlan(file)
 	if err != nil {
 		return settings.Settings{}, fmt.Errorf("failed to load assessment plan from %s: %w", assessmentPlanPath, err)

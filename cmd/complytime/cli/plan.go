@@ -9,9 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/oscal-compass/oscal-sdk-go/settings"
-	"github.com/spf13/cobra"
-
 	"github.com/oscal-compass/oscal-sdk-go/transformers"
+	"github.com/spf13/cobra"
 
 	"github.com/complytime/complytime/cmd/complytime/option"
 	"github.com/complytime/complytime/internal/complytime"
@@ -72,10 +71,10 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 	filePath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentPlanLocation)
 	cleanedPath := filepath.Clean(filePath)
 
-	if err := complytime.WritePlan(assessmentPlan, cleanedPath); err != nil {
+	if err := complytime.WritePlan(assessmentPlan, opts.frameworkID, cleanedPath); err != nil {
 		return fmt.Errorf("error writing assessment plan to %s: %w", cleanedPath, err)
 	}
-
+	fmt.Printf("Assessment plan written to %s\n", cleanedPath)
 	return nil
 }
 
