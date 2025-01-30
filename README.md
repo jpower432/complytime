@@ -2,7 +2,7 @@
 
 [![OpenSSF Best Practices status](https://www.bestpractices.dev/projects/9761/badge)](https://www.bestpractices.dev/projects/9761)
 [![GoDoc](https://img.shields.io/static/v1?label=godoc&message=reference&color=blue)](https://pkg.go.dev/github.com/complytime/complytime)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/helm/helm/badge)](https://scorecard.dev/viewer/?uri=github.com/complytime/complytime)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/complytime/complytime/badge)](https://scorecard.dev/viewer/?uri=github.com/complytime/complytime)
 
 ComplyTime leverages [OSCAL](https://github.com/usnistgov/OSCAL/) to perform compliance assessment activities, using plugins for each stage of the lifecycle.
 
