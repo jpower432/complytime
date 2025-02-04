@@ -98,8 +98,8 @@ var (
 	populatedTable = `┌────────────────────────────────────────────────────────────────────────────────────┐
 │ Framework ID                    Supported Components                               │
 │────────────────────────────────────────────────────────────────────────────────────│
-│ example                         MySoftware                                         │
 │ anotherexample                  MySoftware                                         │
+│ example                         MySoftware                                         │
 │                                                                                    │
 │                                                                                    │
 │                                                                                    │

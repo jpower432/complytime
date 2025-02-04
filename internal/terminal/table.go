@@ -3,6 +3,7 @@ package terminal
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -53,7 +54,7 @@ func ShowDefinitionTable(componentDefinitions []oscalTypes.ComponentDefinition) 
 
 func makeAllRows(definitions []oscalTypes.ComponentDefinition) ([]table.Row, error) {
 	var rows []table.Row
-	compsByProfiles := make(map[string][]string)
+	compsByFramework := make(map[string][]string)
 
 	for _, definition := range definitions {
 		if definition.Components != nil {
@@ -61,26 +62,29 @@ func makeAllRows(definitions []oscalTypes.ComponentDefinition) ([]table.Row, err
 				if comp.Type == "validation" {
 					continue
 				}
-				profiles, err := processComponent(comp)
+				frameworkIds, err := processComponent(comp)
 				if err != nil {
 					return nil, err
 				}
-				for _, profile := range profiles {
-					comps, ok := compsByProfiles[profile]
+				for _, profile := range frameworkIds {
+					comps, ok := compsByFramework[profile]
 					if !ok {
 						comps = []string{}
 					}
 					comps = append(comps, comp.Title)
-					compsByProfiles[profile] = comps
+					compsByFramework[profile] = comps
 				}
 			}
 		}
 	}
 
-	for profile, comps := range compsByProfiles {
-		row := table.Row{profile, strings.Join(comps, ", ")}
+	for id, comps := range compsByFramework {
+		row := table.Row{id, strings.Join(comps, ", ")}
 		rows = append(rows, row)
 	}
+
+	// Sort the rows slice by the framework short name
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
 
 	return rows, nil
 }
