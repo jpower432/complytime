@@ -20,14 +20,12 @@ func listCmd(common *option.Common) *cobra.Command {
 		Short:   "List information about supported frameworks and components.",
 		Example: "complytime list",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return list(cmd, common)
-		},
+		RunE:    func(_ *cobra.Command, _ []string) error { return list(common) },
 	}
 	return cmd
 }
 
-func list(cmd *cobra.Command, opts *option.Common) error {
+func list(opts *option.Common) error {
 	appDir, err := complytime.NewApplicationDirectory(true)
 	if err != nil {
 		return err
@@ -41,7 +39,7 @@ func list(cmd *cobra.Command, opts *option.Common) error {
 		return err
 	}
 	if _, err := tea.NewProgram(model, tea.WithOutput(opts.Out)).Run(); err != nil {
-		return fmt.Errorf("failed to display profile list: %w", err)
+		return fmt.Errorf("failed to display component list: %w", err)
 	}
 	return nil
 }

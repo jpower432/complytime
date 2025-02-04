@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,10 @@ import (
 // ShowDefinitionTable returned a Model to be used with a `bubbletea` Program that
 // renders a table with framework and component information from given component definitions.
 func ShowDefinitionTable(componentDefinitions []oscalTypes.ComponentDefinition) (tea.Model, error) {
+	if len(componentDefinitions) == 0 {
+		return nil, errors.New("component definitions inputs cannot be empty")
+	}
+
 	columns := []table.Column{
 		{Title: "Framework ID", Width: 30},
 		{Title: "Supported Components", Width: 50},
