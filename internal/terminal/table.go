@@ -97,8 +97,8 @@ func processComponent(component oscalTypes.DefinedComponent) ([]string, error) {
 
 var (
 	baseStyle = lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240"))
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("240"))
 	_ tea.Model = (*model)(nil)
 )
 
