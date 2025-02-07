@@ -75,7 +75,7 @@ func TestLoadControlSource(t *testing.T) {
 		{
 			name:    "Invalid/WrongDirectory",
 			source:  "file://anotherdirectory/profile.json",
-			wantErr: "got path anotherdirectory/profile.json, control source is expected to be under path testdata/complytime/controls",
+			wantErr: fmt.Sprintf("got path anotherdirectory/profile.json, control source is expected to be under path %s", appDir.ControlDir()),
 		},
 		{
 			name:    "Invalid/FileDoesNotExist",
