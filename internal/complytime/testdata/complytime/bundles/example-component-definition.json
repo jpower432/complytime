@@ -56,7 +56,7 @@
                 "ns": "https://oscal-compass.github.io/compliance-trestle/schemas/oscal/cd",
                 "value": "example"
               }
-          ],
+            ],
             "set-parameters": [
               {
                 "param-id": "param-1",

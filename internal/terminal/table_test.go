@@ -5,105 +5,74 @@ package terminal
 import (
 	"testing"
 
-	oscalTypes "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-2"
-	"github.com/oscal-compass/oscal-sdk-go/extensions"
 	"github.com/stretchr/testify/require"
+
+	"github.com/complytime/complytime/internal/complytime"
 )
 
 func TestShowDefinitionTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		compDefs []oscalTypes.ComponentDefinition
-		wantView string
-		wantErr  string
+		name       string
+		frameworks []complytime.Framework
+		wantView   string
 	}{
 		{
 			name: "Valid/HappyPath",
-			compDefs: []oscalTypes.ComponentDefinition{
+			frameworks: []complytime.Framework{
 				{
-					Components: &[]oscalTypes.DefinedComponent{
-						{
-							Title: "MySoftware",
-							Type:  "service",
-							ControlImplementations: &[]oscalTypes.ControlImplementationSet{
-								{
-									Source:      "profiles/example/profile.json",
-									Description: "My implementation.",
-								},
-								{
-									Props: &[]oscalTypes.Property{
-										{
-											Name:  extensions.FrameworkProp,
-											Value: "anotherexample",
-											Ns:    extensions.TrestleNameSpace,
-										},
-									},
-									Description: "my other implementation",
-								},
-							},
-						},
-					},
+					ID:                  "anotherexample",
+					Title:               "Example Profile (moderate)",
+					SupportedComponents: []string{"My Software"},
+				},
+				{
+					ID:                  "example",
+					Title:               "Example Profile (low)",
+					SupportedComponents: []string{"My Software"},
 				},
 			},
 			wantView: populatedTable,
 		},
 		{
-			name: "Valid/NoImplementations",
-			compDefs: []oscalTypes.ComponentDefinition{
-				{
-					Components: &[]oscalTypes.DefinedComponent{
-						{
-							Title: "MySoftware",
-							Type:  "service",
-						},
-					},
-				},
-			},
-			wantView: emptyTable,
-		},
-		{
-			name:     "Invalid/NoComponentDefinitions",
-			compDefs: nil,
-			wantErr:  "component definitions inputs cannot be empty",
+			name:       "Valid/Empty",
+			frameworks: []complytime.Framework{},
+			wantView:   emptyTable,
 		},
 	}
 
 	for _, c := range tests {
 		t.Run(c.name, func(t *testing.T) {
-			initialModel, err := ShowDefinitionTable(c.compDefs)
-			if c.wantErr != "" {
-				require.EqualError(t, err, c.wantErr)
-			} else {
-				require.NoError(t, err)
-				gotView := initialModel.View()
-				require.Equal(t, c.wantView, gotView)
-			}
-
+			initialModel := ShowDefinitionTable(c.frameworks)
+			gotView := initialModel.View()
+			require.Equal(t, c.wantView, gotView)
 		})
 	}
 }
 
 var (
-	emptyTable = `┌────────────────────────────────────────────────────────────────────────────────────┐
-│ Framework ID                    Supported Components                               │
-│────────────────────────────────────────────────────────────────────────────────────│
-│                                                                                    │
-│                                                                                    │
-│                                                                                    │
-│                                                                                    │
-│                                                                                    │
-│                                                                                    │
-└────────────────────────────────────────────────────────────────────────────────────┘
+	emptyTable = `Choose an option from the Framework ID column to use with complytime plan.
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Title                           Framework ID          Supported Components                               │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 `
-	populatedTable = `┌────────────────────────────────────────────────────────────────────────────────────┐
-│ Framework ID                    Supported Components                               │
-│────────────────────────────────────────────────────────────────────────────────────│
-│ anotherexample                  MySoftware                                         │
-│ example                         MySoftware                                         │
-│                                                                                    │
-│                                                                                    │
-│                                                                                    │
-│                                                                                    │
-└────────────────────────────────────────────────────────────────────────────────────┘
+	populatedTable = `Choose an option from the Framework ID column to use with complytime plan.
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Title                           Framework ID          Supported Components                               │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│ Example Profile (moderate)      anotherexample        My Software                                        │
+│ Example Profile (low)           example               My Software                                        │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 `
 )

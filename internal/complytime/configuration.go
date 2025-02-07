@@ -23,6 +23,7 @@ const (
 	ApplicationDir = "complytime"
 	PluginDir      = "plugins"
 	BundlesDir     = "bundles"
+	ControlsDir    = "controls"
 )
 
 // ErrNoComponentDefinitionsFound returns an error indicated the supplied directory
@@ -39,6 +40,8 @@ type ApplicationDirectory struct {
 	pluginDir string
 	// bundleDir contains all the detectable component definitions
 	bundleDir string
+	// controlDir contains all OSCAL control layer models.
+	controlDir string
 }
 
 // NewApplicationDirectory returns a new ApplicationDirectory.
@@ -60,6 +63,7 @@ func newApplicationDirectory(rootDir string, create bool) (ApplicationDirectory,
 	}
 	applicationDir.pluginDir = filepath.Join(applicationDir.appDir, PluginDir)
 	applicationDir.bundleDir = filepath.Join(applicationDir.appDir, BundlesDir)
+	applicationDir.controlDir = filepath.Join(applicationDir.appDir, ControlsDir)
 	if create {
 		return applicationDir, applicationDir.create()
 	}
@@ -92,12 +96,16 @@ func (a ApplicationDirectory) BundleDir() string {
 	return a.bundleDir
 }
 
+// ControlDir returns the directory containing control layer OSCAL artifacts.
+func (a ApplicationDirectory) ControlDir() string { return a.controlDir }
+
 // Dirs returns all directories in the ApplicationDirectory.
 func (a ApplicationDirectory) Dirs() []string {
 	return []string{
 		a.appDir,
 		a.pluginDir,
 		a.bundleDir,
+		a.controlDir,
 	}
 }
 

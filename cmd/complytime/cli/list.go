@@ -16,28 +16,28 @@ import (
 // listCmd creates a new cobra.Command for the "list" subcommand
 func listCmd(common *option.Common) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "list [flags]",
-		Short:   "List information about supported frameworks and components.",
-		Example: "complytime list",
-		Args:    cobra.NoArgs,
-		RunE:    func(_ *cobra.Command, _ []string) error { return list(common) },
+		Use:          "list [flags]",
+		Short:        "List information about supported frameworks and components.",
+		SilenceUsage: true,
+		Example:      "complytime list",
+		Args:         cobra.NoArgs,
+		RunE:         func(_ *cobra.Command, _ []string) error { return runList(common) },
 	}
 	return cmd
 }
 
-func list(opts *option.Common) error {
+func runList(opts *option.Common) error {
 	appDir, err := complytime.NewApplicationDirectory(true)
 	if err != nil {
 		return err
 	}
-	compDefBundles, err := complytime.FindComponentDefinitions(appDir.BundleDir())
-	if err != nil {
-		return fmt.Errorf("error finding component defintions in %s: %w", appDir.BundleDir(), err)
-	}
-	model, err := terminal.ShowDefinitionTable(compDefBundles)
+
+	frameworks, err := complytime.LoadFrameworks(appDir)
 	if err != nil {
 		return err
 	}
+
+	model := terminal.ShowDefinitionTable(frameworks)
 	if _, err := tea.NewProgram(model, tea.WithOutput(opts.Out)).Run(); err != nil {
 		return fmt.Errorf("failed to display component list: %w", err)
 	}

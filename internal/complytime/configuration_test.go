@@ -18,11 +18,13 @@ func TestApplicationDirectory(t *testing.T) {
 	expectedAppDir := filepath.Join(tmpDir, "complytime")
 	expectedPluginDir := filepath.Join(tmpDir, "complytime", "plugins")
 	expectedBundleDir := filepath.Join(tmpDir, "complytime", "bundles")
+	expectedControlDir := filepath.Join(tmpDir, "complytime", "controls")
 
 	require.Equal(t, expectedAppDir, appDir.AppDir())
 	require.Equal(t, expectedPluginDir, appDir.PluginDir())
 	require.Equal(t, expectedBundleDir, appDir.BundleDir())
-	require.Equal(t, []string{expectedAppDir, expectedPluginDir, expectedBundleDir}, appDir.Dirs())
+	require.Equal(t, expectedControlDir, appDir.ControlDir())
+	require.Equal(t, []string{expectedAppDir, expectedPluginDir, expectedBundleDir, expectedControlDir}, appDir.Dirs())
 
 	appDir, err = newApplicationDirectory(tmpDir, true)
 	require.NoError(t, err)
@@ -32,10 +34,12 @@ func TestApplicationDirectory(t *testing.T) {
 	require.NoError(t, err)
 	_, err = os.Stat(appDir.BundleDir())
 	require.NoError(t, err)
+	_, err = os.Stat(appDir.ControlDir())
+	require.NoError(t, err)
 }
 
 func TestFindComponentDefinitions(t *testing.T) {
-	compDefs, err := FindComponentDefinitions("testdata/bundles")
+	compDefs, err := FindComponentDefinitions("testdata/complytime/bundles")
 	require.NoError(t, err)
 	require.Len(t, compDefs, 1)
 

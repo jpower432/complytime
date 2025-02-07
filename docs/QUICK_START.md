@@ -24,6 +24,7 @@ policy validation plugin. See `docs/samples/` for example configuration for the 
 
 ```bash
 cp docs/samples/sample-component-definition.json ~/.config/complytime/bundles
+cp docs/samples/sample-profile.json ~/.config/complytime/controls
 ```
 
 ## Step 3: Install a plugin
