@@ -37,6 +37,17 @@ func TestShowDefinitionTable(t *testing.T) {
 			frameworks: []complytime.Framework{},
 			wantView:   emptyTable,
 		},
+		{
+			name: "Valid/LongTitle",
+			frameworks: []complytime.Framework{
+				{
+					ID:                  "anotherexample",
+					Title:               "This is a very very very long title (moderate)",
+					SupportedComponents: []string{"My Software"},
+				},
+			},
+			wantView: longTitle,
+		},
 	}
 
 	for _, c := range tests {
@@ -49,9 +60,7 @@ func TestShowDefinitionTable(t *testing.T) {
 }
 
 var (
-	emptyTable = `Choose an option from the Framework ID column to use with complytime plan.
-
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+	emptyTable = `┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Title                           Framework ID          Supported Components                               │
 │──────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │                                                                                                          │
@@ -61,10 +70,10 @@ var (
 │                                                                                                          │
 │                                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-`
-	populatedTable = `Choose an option from the Framework ID column to use with complytime plan.
 
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+Choose an option from the Framework ID column to use with complytime plan.
+`
+	populatedTable = `┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Title                           Framework ID          Supported Components                               │
 │──────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │ Example Profile (moderate)      anotherexample        My Software                                        │
@@ -74,5 +83,20 @@ var (
 │                                                                                                          │
 │                                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Choose an option from the Framework ID column to use with complytime plan.
+`
+	longTitle = `┌──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Title                           Framework ID          Supported Components                               │
+│──────────────────────────────────────────────────────────────────────────────────────────────────────────│
+│ This is a very very very long…  anotherexample        My Software                                        │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+│                                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Choose an option from the Framework ID column to use with complytime plan.
 `
 )
