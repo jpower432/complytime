@@ -17,6 +17,7 @@ directory should be created under $HOME/.config
 complytime
 ├── bundles
 └── plugins
+└── controls
 ```
 
 You will need an OSCAL Component Definition that defines an OSCAL Component for your target system and an OSCAL Component the corresponding
