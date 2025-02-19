@@ -37,10 +37,8 @@ github.com/charmbracelet/x/term v0.2.1 h1:AQeHeLZ1OqSXhrAWpYUtZyX1T3zVxfpZuEQMIQ
 github.com/charmbracelet/x/term v0.2.1/go.mod h1:oQ4enTYFV7QN4m0i9mzHrViD7TQKvNEEkHUMCmsxdUg=
 github.com/clarketm/json v1.17.1 h1:U1IxjqJkJ7bRK4L6dyphmoO840P6bdhPdbbLySourqI=
 github.com/clarketm/json v1.17.1/go.mod h1:ynr2LRfb0fQU34l07csRNBTcivjySLLiY1YzQqKVfdo=
-github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250204175751-c17051365f3f h1:rjw14D8dSWQSbRH7KqXrvTOLarOVB5QA+W+4n/0anTY=
-github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250204175751-c17051365f3f/go.mod h1:oyNjCAtFj4XNCZO7+02mb1kPCTXL4IOK6oN8Qy2Tjeo=
-github.com/complytime/oscal-sdk-go v0.0.0-20250125144051-7723a7b6b06b h1:F3tqX70f1WSdGrOnSFlc0AU/QiGxBKw6MfmC/ZX0wdE=
-github.com/complytime/oscal-sdk-go v0.0.0-20250125144051-7723a7b6b06b/go.mod h1:O922y+Za9/ez0jKTR3/97BilPnrjabtFJ6rCVhHk37s=
+github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250219212651-3ec848c23b40 h1:sKrGLNSVIrfkOU2b6DbBAz1Stb6zHo9V3oiJQ5/3Q88=
+github.com/complytime/compliance-to-policy-go/v2 v2.0.0-20250219212651-3ec848c23b40/go.mod h1:ayAFbmq1/RzJpxsSWHpax+IkMBWCQCM3PcXX+oPXqKo=
 github.com/coreos/fcct v0.5.0 h1:f/z+MCoR2vULes+MyoPEApQ6iluy/JbXoRi6dahPItQ=
 github.com/coreos/fcct v0.5.0/go.mod h1:cbE+j77YSQwFB2fozWVB3qsI2Pi3YiVEbDz/b6Yywdo=
 github.com/coreos/go-json v0.0.0-20230131223807-18775e0fb4fb h1:rmqyI19j3Z/74bIRhuC59RB442rXUazKNueVpfJPxg4=
@@ -197,6 +195,8 @@ github.com/openshift/library-go v0.0.0-20231102154438-cfcf2b4fbc87 h1:GcaI98ric0
 github.com/openshift/library-go v0.0.0-20231102154438-cfcf2b4fbc87/go.mod h1:8UzmrBMCn7+GzouL8DVYkL9COBQTB1Ggd13/mHJQCUg=
 github.com/openshift/machine-config-operator v0.0.1-0.20230815171034-c2bb862bc08a h1:3KR43D0bbEi3IYSS6b7abKWbj93RJyuxoHImmYaiWZU=
 github.com/openshift/machine-config-operator v0.0.1-0.20230815171034-c2bb862bc08a/go.mod h1:kP51fbL8QBSY/mAkFicoF73x0QSraPrX4BjWIdzFPio=
+github.com/oscal-compass/oscal-sdk-go v0.0.0-20250219174812-48644982faf8 h1:5/b3AHKt6FgY6KnROs78jQ3qdIAW7X+52Xa6Sj7/YwE=
+github.com/oscal-compass/oscal-sdk-go v0.0.0-20250219174812-48644982faf8/go.mod h1:pEvvwmG5RdxBH1aRIENz2MSy3Pf0OQXryxDJ4oepkNQ=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

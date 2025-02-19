@@ -33,6 +33,11 @@ func New(cfg *config.Config) PluginServer {
 	return PluginServer{Config: cfg}
 }
 
+func (s PluginServer) Configure(m map[string]string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s PluginServer) Generate(policy policy.Policy) error {
 	fmt.Println("Generating a tailoring file")
 	tailoringXML, err := xccdf.PolicyToXML(policy, s.Config)
