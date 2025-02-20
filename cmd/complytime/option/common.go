@@ -47,7 +47,7 @@ func (o *ComplyTime) BindFlags(fs *pflag.FlagSet) {
 	fs.StringVarP(&o.UserWorkspace, "workspace", "w", ".", "workspace to use for artifact generation")
 }
 
-// ToPluginOptions return global complytime PluginOptions based on complytime Options.
+// ToPluginOptions returns global PluginOptions based on complytime Options.
 func (o *ComplyTime) ToPluginOptions() complytime.PluginOptions {
 	pluginOptions := complytime.NewPluginOptions()
 	pluginOptions.Workspace = filepath.Clean(o.UserWorkspace)
