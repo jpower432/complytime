@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	oscalTypes "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-2"
 	"github.com/oscal-compass/oscal-sdk-go/settings"
 	"github.com/oscal-compass/oscal-sdk-go/transformers"
 	"github.com/spf13/cobra"
@@ -22,13 +23,6 @@ const assessmentPlanLocation = "assessment-plan.json"
 type planOptions struct {
 	*option.Common
 	complyTimeOpts *option.ComplyTime
-	frameworkID    string
-}
-
-func setOptsPlanFromArgs(args []string, opts *planOptions) {
-	if len(args) == 1 {
-		opts.frameworkID = filepath.Clean(args[0])
-	}
 }
 
 // planCmd creates a new cobra.Command for the "plan" subcommand
@@ -43,7 +37,9 @@ func planCmd(common *option.Common) *cobra.Command {
 		Example: "complytime plan myframework",
 		Args:    cobra.ExactArgs(1),
 		PreRun: func(cmd *cobra.Command, args []string) {
-			setOptsPlanFromArgs(args, planOpts)
+			if len(args) == 1 {
+				planOpts.complyTimeOpts.FrameworkID = filepath.Clean(args[0])
+			}
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runPlan(cmd, planOpts)
@@ -63,7 +59,7 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 	if err != nil {
 		return err
 	}
-	assessmentPlan, err := transformers.ComponentDefinitionsToAssessmentPlan(cmd.Context(), componentDefs, opts.frameworkID)
+	assessmentPlan, err := transformers.ComponentDefinitionsToAssessmentPlan(cmd.Context(), componentDefs, opts.complyTimeOpts.FrameworkID)
 	if err != nil {
 		return err
 	}
@@ -71,31 +67,37 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 	filePath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentPlanLocation)
 	cleanedPath := filepath.Clean(filePath)
 
-	if err := complytime.WritePlan(assessmentPlan, opts.frameworkID, cleanedPath); err != nil {
+	if err := complytime.WritePlan(assessmentPlan, opts.complyTimeOpts.FrameworkID, cleanedPath); err != nil {
 		return fmt.Errorf("error writing assessment plan to %s: %w", cleanedPath, err)
 	}
 	fmt.Printf("Assessment plan written to %s\n", cleanedPath)
 	return nil
 }
 
-// getPlanSettingsForWorkspace loads the assessment plan for the workspace and create new
-// Settings from that data.
-func getPlanSettingsForWorkspace(opts *option.ComplyTime) (settings.Settings, error) {
-	// Load settings from assessment plan
-	filePath := filepath.Join(opts.UserWorkspace, assessmentPlanLocation)
-	cleanedPath := filepath.Clean(filePath)
-
-	planSettings, err := complytime.PlanSettings(cleanedPath)
+// loadPlan returns the loaded assessment plan and path from the workspace.
+func loadPlan(opts *option.ComplyTime) (*oscalTypes.AssessmentPlan, string, error) {
+	apPath := filepath.Join(opts.UserWorkspace, assessmentPlanLocation)
+	apCleanedPath := filepath.Clean(apPath)
+	assessmentPlan, err := complytime.ReadPlan(apCleanedPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return planSettings, fmt.Errorf("error: assessment plan does exist in workspace %s: %w\n\nDid you run the plan command?",
+			return nil, "", fmt.Errorf("error: assessment plan does exist in workspace %s: %w\n\nDid you run the plan command?",
 				opts.UserWorkspace,
 				err)
 		}
+		return nil, "", err
+	}
+	return assessmentPlan, apCleanedPath, nil
+}
+
+// getPlanSettings is a thin wrapper on complytime.PlanSettings for consistent error messages in the CLI.
+func getPlanSettings(opts *option.ComplyTime, assessmentPlan *oscalTypes.AssessmentPlan) (settings.Settings, error) {
+	planSettings, err := complytime.PlanSettings(assessmentPlan)
+	if err != nil {
 		if errors.Is(err, complytime.ErrNoActivities) {
-			return planSettings, fmt.Errorf("assessment plan %s does not have associated activities: %w", cleanedPath, err)
+			return settings.Settings{}, fmt.Errorf("assessment plan in %q workspace does not have associated activities: %w", opts.UserWorkspace, err)
 		}
-		return planSettings, err
+		return settings.Settings{}, err
 	}
 	return planSettings, nil
 }

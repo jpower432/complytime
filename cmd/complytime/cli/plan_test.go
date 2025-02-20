@@ -10,19 +10,23 @@ import (
 	"github.com/complytime/complytime/cmd/complytime/option"
 )
 
-func TestGetPlanSettingsForWorkspace(t *testing.T) {
+func TestPlansInWorkspace(t *testing.T) {
 	// Test that the proper error messages are thrown when
-	// collecting setting information
+	// working with assessment plans in the user workspace.
+
 	testOpts := &option.ComplyTime{
 		UserWorkspace: "doesnotexist",
 	}
 	wantErr := "error: assessment plan does exist in workspace doesnotexist: o" +
 		"pen doesnotexist/assessment-plan.json: no such file or directory\n\nDid you run the plan command?"
-	_, gotErr := getPlanSettingsForWorkspace(testOpts)
+	_, _, gotErr := loadPlan(testOpts)
 	require.EqualError(t, gotErr, wantErr)
 
 	testOpts.UserWorkspace = "testdata"
-	wantErr = "assessment plan testdata/assessment-plan.json does not have associated activities: no local activities detected"
-	_, gotErr = getPlanSettingsForWorkspace(testOpts)
+	plan, gotPath, err := loadPlan(testOpts)
+	require.NoError(t, err)
+	require.Equal(t, "testdata/assessment-plan.json", gotPath)
+	wantErr = "assessment plan in \"testdata\" workspace does not have associated activities: no local activities detected"
+	_, gotErr = getPlanSettings(testOpts, plan)
 	require.EqualError(t, gotErr, wantErr)
 }
