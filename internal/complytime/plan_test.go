@@ -3,13 +3,11 @@
 package complytime
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	oscalTypes "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-2"
 	"github.com/oscal-compass/oscal-sdk-go/extensions"
-	"github.com/oscal-compass/oscal-sdk-go/generators"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,6 +17,7 @@ func TestPlan(t *testing.T) {
 
 	// Testing reading and writing Assessment plan workflows
 
+	// Test Write -> Read -> Settings with errors
 	testPlan := oscalTypes.AssessmentPlan{
 		UUID: "228ff6d0-0d67-4c15-9c16-ece9a554c4de",
 		Metadata: oscalTypes.Metadata{
@@ -31,9 +30,14 @@ func TestPlan(t *testing.T) {
 	err := WritePlan(&testPlan, "testid", testPlanPath)
 	require.NoError(t, err)
 
-	_, err = PlanSettings(testPlanPath)
+	ap, err := ReadPlan(testPlanPath)
+	require.NoError(t, err)
+	require.NotNil(t, ap)
+
+	_, err = PlanSettings(ap)
 	require.ErrorIs(t, err, ErrNoActivities)
 
+	// Test Write -> Read -> Settings on a happy path
 	localDefs := oscalTypes.LocalDefinitions{
 		Activities: &[]oscalTypes.Activity{
 			{
@@ -48,15 +52,12 @@ func TestPlan(t *testing.T) {
 	err = WritePlan(&testPlan, "testid", testPlanPath)
 	require.NoError(t, err)
 
-	_, err = PlanSettings(testPlanPath)
-	require.NoError(t, err)
-
 	// read plan to ensure it has the expected props
-	testFile, err := os.Open(testPlanPath)
+	ap, err = ReadPlan(testPlanPath)
 	require.NoError(t, err)
-	defer testFile.Close()
+	require.NotNil(t, ap)
 
-	ap, err := generators.NewAssessmentPlan(testFile)
+	_, err = PlanSettings(ap)
 	require.NoError(t, err)
 
 	wantProp := oscalTypes.Property{
