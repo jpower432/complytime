@@ -1,6 +1,8 @@
 package terminal
 
 import (
+	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -11,25 +13,26 @@ import (
 	"github.com/complytime/complytime/internal/complytime"
 )
 
-// ShowDefinitionTable returned a Model to be used with a `bubbletea` Program that
+// ShowDefinitionTable prints a plain table with given framework data.
+func ShowDefinitionTable(writer io.Writer, frameworks []complytime.Framework) {
+	columns, rows := getColumnsAndRows(frameworks)
+	for _, col := range columns {
+		_, _ = fmt.Fprintf(writer, "%-*s", col.Width, col.Title)
+	}
+	_, _ = fmt.Fprintln(writer)
+	for _, row := range rows {
+		for i, cell := range row {
+			_, _ = fmt.Fprintf(writer, "%-*s", columns[i].Width, cell)
+		}
+		_, _ = fmt.Fprintln(writer)
+	}
+
+}
+
+// ShowPrettyDefinitionTable returns a Model to be used with a `bubbletea` Program that
 // renders a table with given Framework data.
-func ShowDefinitionTable(frameworks []complytime.Framework) tea.Model {
-	columns := []table.Column{
-		{Title: "Title", Width: 30},
-		{Title: "Framework ID", Width: 20},
-		{Title: "Supported Components", Width: 50},
-	}
-
-	var rows []table.Row
-
-	for _, framework := range frameworks {
-		row := table.Row{framework.Title, framework.ID, strings.Join(framework.SupportedComponents, ", ")}
-		rows = append(rows, row)
-	}
-
-	// Sort the rows slice by the framework short name
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i][1] < rows[j][1] })
-
+func ShowPrettyDefinitionTable(frameworks []complytime.Framework) tea.Model {
+	columns, rows := getColumnsAndRows(frameworks)
 	tbl := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
@@ -51,6 +54,37 @@ func ShowDefinitionTable(frameworks []complytime.Framework) tea.Model {
 	return model{tbl}
 }
 
+// getColumnsAndRows returns populate columns and row for printing tables.
+func getColumnsAndRows(frameworks []complytime.Framework) ([]table.Column, []table.Row) {
+	var rows []table.Row
+	for _, framework := range frameworks {
+		row := table.Row{framework.Title, framework.ID, strings.Join(framework.SupportedComponents, ", ")}
+		rows = append(rows, row)
+	}
+	// Sort the rows slice by the framework short name
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i][1] < rows[j][1] })
+
+	// Set columns with default widths
+	columns := []table.Column{
+		{Title: "Title", Width: 30},
+		{Title: "Framework ID", Width: 20},
+		{Title: "Supported Components", Width: 30},
+	}
+
+	// Calculate column width based on rows
+	if len(rows) > 0 {
+		for _, row := range rows {
+			for i, cell := range row {
+				if len(cell) > columns[i].Width {
+					columns[i].Width = len(cell)
+				}
+			}
+		}
+	}
+
+	return columns, rows
+}
+
 var (
 	baseStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
@@ -65,7 +99,7 @@ type model struct {
 
 func (m model) Init() tea.Cmd { return nil }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m model) Update(_ tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 

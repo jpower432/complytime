@@ -13,20 +13,31 @@ import (
 	"github.com/complytime/complytime/internal/terminal"
 )
 
+// listOptions defines options for the "list" subcommand
+type listOptions struct {
+	*option.Common
+	// print a plain table only
+	plain bool
+}
+
 // listCmd creates a new cobra.Command for the "list" subcommand
 func listCmd(common *option.Common) *cobra.Command {
+	listOpts := &listOptions{
+		Common: common,
+	}
 	cmd := &cobra.Command{
 		Use:          "list [flags]",
 		Short:        "List information about supported frameworks and components.",
 		SilenceUsage: true,
 		Example:      "complytime list",
 		Args:         cobra.NoArgs,
-		RunE:         func(_ *cobra.Command, _ []string) error { return runList(common) },
+		RunE:         func(_ *cobra.Command, _ []string) error { return runList(listOpts) },
 	}
+	cmd.Flags().BoolVarP(&listOpts.plain, "plain", "p", false, "print the table with minimal formatting")
 	return cmd
 }
 
-func runList(opts *option.Common) error {
+func runList(opts *listOptions) error {
 	appDir, err := complytime.NewApplicationDirectory(true)
 	if err != nil {
 		return err
@@ -37,9 +48,14 @@ func runList(opts *option.Common) error {
 		return err
 	}
 
-	model := terminal.ShowDefinitionTable(frameworks)
-	if _, err := tea.NewProgram(model, tea.WithOutput(opts.Out)).Run(); err != nil {
-		return fmt.Errorf("failed to display component list: %w", err)
+	if opts.plain {
+		terminal.ShowDefinitionTable(opts.Out, frameworks)
+	} else {
+		model := terminal.ShowPrettyDefinitionTable(frameworks)
+		if _, err := tea.NewProgram(model, tea.WithOutput(opts.Out)).Run(); err != nil {
+			return fmt.Errorf("failed to display component list: %w", err)
+		}
 	}
+
 	return nil
 }
