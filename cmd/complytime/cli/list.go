@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/hashicorp/go-hclog"
 	"github.com/spf13/cobra"
 
 	"github.com/complytime/complytime/cmd/complytime/option"
@@ -15,7 +14,7 @@ import (
 )
 
 // listCmd creates a new cobra.Command for the "list" subcommand
-func listCmd(common *option.Common, logger hclog.Logger) *cobra.Command {
+func listCmd(common *option.Common) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "list [flags]",
 		Short:        "List information about supported frameworks and components.",
@@ -24,16 +23,13 @@ func listCmd(common *option.Common, logger hclog.Logger) *cobra.Command {
 		Args:         cobra.NoArgs,
 		PreRun:       func(_ *cobra.Command, _ []string) { enableDebug(logger, common) },
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if err := runList(common, logger); err != nil {
-				logger.Error(err.Error())
-			}
-			return nil
+			return runList(common)
 		},
 	}
 	return cmd
 }
 
-func runList(opts *option.Common, logger hclog.Logger) error {
+func runList(opts *option.Common) error {
 	appDir, err := complytime.NewApplicationDirectory(true)
 	if err != nil {
 		return err

@@ -7,17 +7,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hashicorp/go-hclog"
-
-	"github.com/complytime/complytime/internal/complytime"
 	oscalTypes "github.com/defenseunicorns/go-oscal/src/types/oscal-1-1-2"
 	"github.com/oscal-compass/compliance-to-policy-go/v2/framework"
 	"github.com/oscal-compass/oscal-sdk-go/extensions"
 	"github.com/spf13/cobra"
 
-	"github.com/complytime/complytime/cmd/complytime/option"
+	"github.com/complytime/complytime/internal/complytime"
+
 	"github.com/oscal-compass/oscal-sdk-go/generators"
 	"github.com/oscal-compass/oscal-sdk-go/settings"
+
+	"github.com/complytime/complytime/cmd/complytime/option"
 )
 
 const assessmentResultsLocation = "assessment-results.json"
@@ -29,7 +29,7 @@ type scanOptions struct {
 }
 
 // scanCmd creates a new cobra.Command for the version subcommand.
-func scanCmd(common *option.Common, logger hclog.Logger) *cobra.Command {
+func scanCmd(common *option.Common) *cobra.Command {
 	scanOpts := &scanOptions{
 		Common:         common,
 		complyTimeOpts: &option.ComplyTime{},
@@ -44,17 +44,14 @@ func scanCmd(common *option.Common, logger hclog.Logger) *cobra.Command {
 			enableDebug(logger, common)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := runScan(cmd, scanOpts, logger); err != nil {
-				logger.Error(err.Error())
-			}
-			return nil
+			return runScan(cmd, scanOpts)
 		},
 	}
 	scanOpts.complyTimeOpts.BindFlags(cmd.Flags())
 	return cmd
 }
 
-func runScan(cmd *cobra.Command, opts *scanOptions, logger hclog.Logger) error {
+func runScan(cmd *cobra.Command, opts *scanOptions) error {
 
 	planSettings, err := getPlanSettingsForWorkspace(opts.complyTimeOpts)
 	if err != nil {

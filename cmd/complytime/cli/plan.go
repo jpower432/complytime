@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hashicorp/go-hclog"
-
 	"github.com/oscal-compass/oscal-sdk-go/settings"
 	"github.com/oscal-compass/oscal-sdk-go/transformers"
 	"github.com/spf13/cobra"
@@ -34,7 +32,7 @@ func setOptsPlanFromArgs(args []string, opts *planOptions) {
 }
 
 // planCmd creates a new cobra.Command for the "plan" subcommand
-func planCmd(common *option.Common, logger hclog.Logger) *cobra.Command {
+func planCmd(common *option.Common) *cobra.Command {
 	planOpts := &planOptions{
 		Common:         common,
 		complyTimeOpts: &option.ComplyTime{},
@@ -49,17 +47,14 @@ func planCmd(common *option.Common, logger hclog.Logger) *cobra.Command {
 			setOptsPlanFromArgs(args, planOpts)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := runPlan(cmd, planOpts, logger); err != nil {
-				logger.Error(err.Error())
-			}
-			return nil
+			return runPlan(cmd, planOpts)
 		},
 	}
 	planOpts.complyTimeOpts.BindFlags(cmd.Flags())
 	return cmd
 }
 
-func runPlan(cmd *cobra.Command, opts *planOptions, logger hclog.Logger) error {
+func runPlan(cmd *cobra.Command, opts *planOptions) error {
 	// Create the application directory if it does not exist
 	appDir, err := complytime.NewApplicationDirectory(true)
 	if err != nil {
