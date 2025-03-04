@@ -4,6 +4,7 @@ package complytime
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -79,7 +80,7 @@ func processComponent(appDir ApplicationDirectory, component oscalTypes.DefinedC
 		}
 
 		// Load profile of local and get more information for the description
-		profile, err := LoadControlSource(appDir, implementation.Source)
+		profile, err := LoadProfile(appDir, implementation.Source)
 		if err != nil {
 			return nil, fmt.Errorf("error loading control source %s for component %s: %w", frameworkShortName, component.Title, err)
 		}
@@ -94,8 +95,18 @@ func processComponent(appDir ApplicationDirectory, component oscalTypes.DefinedC
 	return frameworks, nil
 }
 
+// LoadProfileSource returns an OSCAL profile from a given control source from a given application directory.
+func LoadProfile(appDir ApplicationDirectory, controlSource string) (*oscalTypes.Profile, error) {
+	sourceFile, err := findControlSource(appDir, controlSource)
+	if err != nil {
+		return nil, err
+	}
+	defer sourceFile.Close()
+	return generators.NewProfile(sourceFile)
+}
+
 // LoadControlSource returns an OSCAL profiles from a given control source from a given application directory.
-func LoadControlSource(appDir ApplicationDirectory, controlSource string) (*oscalTypes.Profile, error) {
+func findControlSource(appDir ApplicationDirectory, controlSource string) (io.ReadCloser, error) {
 	uri, err := url.ParseRequestURI(controlSource)
 	if err != nil {
 		return nil, err
@@ -119,7 +130,5 @@ func LoadControlSource(appDir ApplicationDirectory, controlSource string) (*osca
 	if err != nil {
 		return nil, err
 	}
-	defer sourceFile.Close()
-
-	return generators.NewProfile(sourceFile)
+	return sourceFile, nil
 }
