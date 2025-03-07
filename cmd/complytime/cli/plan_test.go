@@ -12,7 +12,7 @@ import (
 
 func TestPlansInWorkspace(t *testing.T) {
 	// Test that the proper error messages are thrown when
-	// working with assessment plans in the user workspace.
+	// working with assessment plan in the user workspace.
 
 	testOpts := &option.ComplyTime{
 		UserWorkspace: "doesnotexist",

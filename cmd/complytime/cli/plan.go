@@ -15,6 +15,7 @@ import (
 
 	"github.com/complytime/complytime/cmd/complytime/option"
 	"github.com/complytime/complytime/internal/complytime"
+	"github.com/complytime/complytime/internal/plan"
 )
 
 const assessmentPlanLocation = "assessment-plan.json"
@@ -70,7 +71,7 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 	filePath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentPlanLocation)
 	cleanedPath := filepath.Clean(filePath)
 
-	if err := complytime.WritePlan(assessmentPlan, opts.complyTimeOpts.FrameworkID, cleanedPath); err != nil {
+	if err := plan.WritePlan(assessmentPlan, opts.complyTimeOpts.FrameworkID, cleanedPath); err != nil {
 		return fmt.Errorf("error writing assessment plan to %s: %w", cleanedPath, err)
 	}
 	logger.Info(fmt.Sprintf("Assessment plan written to %s\n", cleanedPath))
@@ -81,7 +82,7 @@ func runPlan(cmd *cobra.Command, opts *planOptions) error {
 func loadPlan(opts *option.ComplyTime) (*oscalTypes.AssessmentPlan, string, error) {
 	apPath := filepath.Join(opts.UserWorkspace, assessmentPlanLocation)
 	apCleanedPath := filepath.Clean(apPath)
-	assessmentPlan, err := complytime.ReadPlan(apCleanedPath)
+	assessmentPlan, err := plan.ReadPlan(apCleanedPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, "", fmt.Errorf("error: assessment plan does not exist in workspace %s: %w\n\nDid you run the plan command?",
@@ -95,9 +96,9 @@ func loadPlan(opts *option.ComplyTime) (*oscalTypes.AssessmentPlan, string, erro
 
 // getPlanSettings is a thin wrapper on complytime.PlanSettings for consistent error messages in the CLI.
 func getPlanSettings(opts *option.ComplyTime, assessmentPlan *oscalTypes.AssessmentPlan) (settings.Settings, error) {
-	planSettings, err := complytime.PlanSettings(assessmentPlan)
+	planSettings, err := plan.Settings(assessmentPlan)
 	if err != nil {
-		if errors.Is(err, complytime.ErrNoActivities) {
+		if errors.Is(err, plan.ErrNoActivities) {
 			return settings.Settings{}, fmt.Errorf("assessment plan in %q workspace does not have associated activities: %w", opts.UserWorkspace, err)
 		}
 		return settings.Settings{}, err

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package complytime
+package plan
 
 import (
 	"encoding/json"
@@ -47,7 +47,7 @@ func WritePlan(plan *oscalTypes.AssessmentPlan, frameworkId string, planLocation
 	return os.WriteFile(planLocation, assessmentPlanData, 0600)
 }
 
-// ReadPlan reads an assessment plans from a given file path.
+// ReadPlan reads an assessment plan from a given file path.
 func ReadPlan(assessmentPlanPath string) (*oscalTypes.AssessmentPlan, error) {
 	file, err := os.Open(assessmentPlanPath)
 	if err != nil {
@@ -64,9 +64,9 @@ func ReadPlan(assessmentPlanPath string) (*oscalTypes.AssessmentPlan, error) {
 
 var ErrNoActivities = errors.New("no local activities detected")
 
-// PlanSettings return a new compliance Settings instance based on the
+// Settings return a new compliance Settings instance based on the
 // given assessment plan path.
-func PlanSettings(plan *oscalTypes.AssessmentPlan) (settings.Settings, error) {
+func Settings(plan *oscalTypes.AssessmentPlan) (settings.Settings, error) {
 	if plan.LocalDefinitions != nil && plan.LocalDefinitions.Activities != nil {
 		return settings.NewAssessmentActivitiesSettings(*plan.LocalDefinitions.Activities), nil
 	}
