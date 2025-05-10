@@ -19,7 +19,7 @@ func auditCmd(common *option.Common) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:          "audit [flags]",
-		Short:        "Audit the target system over time",
+		Short:        "Create package",
 		Example:      "complytime audit",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,

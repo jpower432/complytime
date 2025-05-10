@@ -5,20 +5,16 @@ package cli
 import (
 	"fmt"
 
-	gowitness "github.com/in-toto/go-witness"
-	"github.com/in-toto/go-witness/archivista"
-	"github.com/in-toto/go-witness/attestation"
-	"github.com/invopop/jsonschema"
 	"github.com/oscal-compass/compliance-to-policy-go/v2/framework"
 	"github.com/oscal-compass/compliance-to-policy-go/v2/framework/actions"
 	"github.com/oscal-compass/oscal-sdk-go/extensions"
 	"github.com/oscal-compass/oscal-sdk-go/validation"
 	"github.com/revanite-io/sci/layer2"
-	"github.com/revanite-io/sci/layer4"
 	"github.com/spf13/cobra"
 
 	"github.com/complytime/complytime/cmd/complytime/option"
 	"github.com/complytime/complytime/internal/complytime"
+	"github.com/complytime/complytime/pkg/agentkit/resource"
 )
 
 // evaluateOptions defined options for the scan subcommand.
@@ -28,8 +24,8 @@ type evaluateOptions struct {
 	archivistaURL  string
 }
 
-// scanCmd creates a new cobra.Command for the version subcommand.
-func scanCmd(common *option.Common) *cobra.Command {
+// evaluateCmd creates a new cobra.Command for the evaluate subcommand.
+func evaluateCmd(common *option.Common) *cobra.Command {
 	scanOpts := &evaluateOptions{
 		Common:         common,
 		complyTimeOpts: &option.ComplyTime{},
@@ -106,63 +102,18 @@ func runEvaluation(cmd *cobra.Command, opts *evaluateOptions) error {
 		return err
 	}
 
-	var attestors []attestation.Attestor
+	artifact := resource.NewAttestation(opts.archivistaURL)
 	for _, result := range allResults {
+		// TODO: ingest a real layer 2 catalog
 		evaluation, err := actions.Evaluate(cmd.Context(), inputContext, []layer2.Control{}, result)
 		if err != nil {
 			return err
 		}
 
-		// Make an at testator
-		l4Attestor := Layer4{
-			eval: evaluation,
+		// TODO: Set resource here
+		if err := artifact.Attach(resource.Resource{ID: "example"}, evaluation); err != nil {
+			return err
 		}
-		attestors = append(attestors, l4Attestor)
 	}
-
-	// using this purposefully for not because I just want the one envelope
-	runResults, err := gowitness.Run("step", gowitness.RunWithAttestors(attestors))
-	if err != nil {
-		return err
-	}
-
-	// export attestations to Archivista
-	client := archivista.New(opts.archivistaURL)
-	_, err = client.Store(cmd.Context(), runResults.SignedEnvelope)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-var _ attestation.Attestor = (*Layer4)(nil)
-
-type Layer4 struct {
-	eval layer4.Layer4
-}
-
-func (l Layer4) Name() string {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (l Layer4) Type() string {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (l Layer4) RunType() attestation.RunType {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (l Layer4) Attest(ctx *attestation.AttestationContext) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (l Layer4) Schema() *jsonschema.Schema {
-	//TODO implement me
-	panic("implement me")
+	return artifact.Export(cmd.Context())
 }
