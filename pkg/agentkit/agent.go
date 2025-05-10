@@ -16,11 +16,12 @@ import (
 )
 
 type Agent struct {
-	collector resource.Collector
+	collector     resource.Collector
+	targetCatalog string
 }
 
 // NewAgent creates a new Agent.
-func NewAgent(collector resource.Collector) *Agent {
+func NewAgent(collector resource.Collector, targetCatalog string) *Agent {
 	agent := &Agent{collector: collector}
 	return agent
 }
@@ -50,7 +51,7 @@ func RunWithExporterURL(url string) RunOption {
 	}
 }
 
-func (p *Agent) Run(ctx context.Context, opts ...RunOption) error {
+func (a *Agent) Run(ctx context.Context, opts ...RunOption) error {
 	options := runOptions{}
 	options.defaults()
 	for _, opt := range opts {
@@ -77,8 +78,7 @@ func (p *Agent) Run(ctx context.Context, opts ...RunOption) error {
 		}()
 	}
 
-	// TODO: Reevaluate the wait groups.
-	// Implement cancel if signal is passed.
+	// Implement cancel if cancellation signal is passed.
 	var wg sync.WaitGroup
 	errs := make(chan error)
 	errsDone := make(chan struct{})
@@ -94,13 +94,18 @@ func (p *Agent) Run(ctx context.Context, opts ...RunOption) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		rs, evaluation, err := p.collector.Collect(ctx)
+		rs, err := a.collector.Collect(ctx)
+		if err != nil {
+			errs <- err
+		}
+
+		plan, err := a.collector.Plan(ctx, a.targetCatalog)
 		if err != nil {
 			errs <- err
 		}
 
 		artifact := resource.NewAttestation(options.exportURL)
-		err = artifact.Attach(rs, *evaluation)
+		err = artifact.Attach(rs, plan)
 		if err != nil {
 			errs <- err
 		}

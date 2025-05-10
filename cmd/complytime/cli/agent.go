@@ -3,6 +3,10 @@
 package cli
 
 import (
+	"os"
+
+	"github.com/goccy/go-yaml"
+	"github.com/revanite-io/sci/layer2"
 	"github.com/spf13/cobra"
 
 	"github.com/complytime/complytime/cmd/complytime/option"
@@ -14,13 +18,13 @@ import (
 type agentOptions struct {
 	*option.Common
 	archivistaURL string
+	catalogPath   string
 }
 
 // agentCmd creates a new cobra.Command for the agent subcommand.
 func agentCmd(common *option.Common) *cobra.Command {
-	agentOpts := &evaluateOptions{
-		Common:         common,
-		complyTimeOpts: &option.ComplyTime{},
+	agentOpts := &agentOptions{
+		Common: common,
 	}
 	cmd := &cobra.Command{
 		Use:          "agent [flags]",
@@ -30,8 +34,20 @@ func agentCmd(common *option.Common) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			agent := agentkit.NewAgent(resource.NoopCollector{})
-			err := agent.Run(cmd.Context(), agentkit.RunWithExporterURL(agentOpts.archivistaURL))
+			catalog, err := getCatalog(agentOpts.catalogPath)
+			if err != nil {
+				return err
+			}
+			collector := resource.NoopCollector{}
+
+			// Needed?
+			err = collector.AddCatalog(catalog)
+			if err != nil {
+				return err
+			}
+
+			agent := agentkit.NewAgent(collector, catalog.Metadata.Id)
+			err = agent.Run(cmd.Context(), agentkit.RunWithExporterURL(agentOpts.archivistaURL))
 			if err != nil {
 				return err
 			}
@@ -39,6 +55,20 @@ func agentCmd(common *option.Common) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&agentOpts.archivistaURL, "archivista-url", "a", "localhost:8081", "URL to archivista instance")
-	agentOpts.complyTimeOpts.BindFlags(cmd.Flags())
+	cmd.Flags().StringVarP(&agentOpts.catalogPath, "catalogPath", "p", "", "Path to layer 2 catalog")
+	agentOpts.BindFlags(cmd.Flags())
 	return cmd
+}
+
+func getCatalog(filepath string) (layer2.Layer2, error) {
+	var catalog layer2.Layer2
+	yamlFile, err := os.ReadFile(filepath)
+	if err != nil {
+		return catalog, err
+	}
+	err = yaml.Unmarshal(yamlFile, &catalog)
+	if err != nil {
+		return catalog, err
+	}
+	return catalog, nil
 }
