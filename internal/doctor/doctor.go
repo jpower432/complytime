@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/complytime/complyctl/internal/cache"
@@ -67,13 +68,14 @@ const registryTimeout = 5 * time.Second
 // cacheBaseDir is the root cache directory (~/.complytime) where state.json
 // resides. policiesCacheDir is the policies subdirectory used by CheckCache.
 // See FR-039, R44, R51, R52, R55: specs/001-gemara-native-workflow/spec.md
-func Run(cfg *complytime.WorkspaceConfig, configPath, providerDir string, cacheBaseDir, policiesCacheDir string, resolver PolicyGraphResolver, versionResolver VersionResolver, verbose bool, pluginLogOutput io.Writer) []CheckResult {
+func Run(cfg *complytime.WorkspaceConfig, configPath, providerDir, cacheDir string, resolver PolicyGraphResolver, versionResolver VersionResolver, verbose bool, pluginLogOutput io.Writer) []CheckResult {
+	policiesCacheDir := filepath.Join(cacheDir, complytime.PoliciesSubdir)
 	var results []CheckResult
 	results = append(results, CheckConfig(configPath))
 	providerResults, healthData := CheckProviders(providerDir, pluginLogOutput)
 	results = append(results, providerResults...)
 	results = append(results, CheckCache(policiesCacheDir))
-	results = append(results, CheckPolicyVersions(cfg, cacheBaseDir, versionResolver)...)
+	results = append(results, CheckPolicyVersions(cfg, cacheDir, versionResolver)...)
 	results = append(results, CheckPolicyActivePeriod(cfg, resolver, verbose)...)
 	results = append(results, CheckVariables(cfg, healthData, resolver, verbose)...)
 	return results
@@ -106,15 +108,6 @@ func CheckConfig(configPath string) CheckResult {
 			Name:     "config",
 			Status:   StatusFail,
 			Message:  fmt.Sprintf("config validation failed: %v", err),
-			Blocking: true,
-		}
-	}
-
-	if err := complytime.ValidateTargetPolicyVersions(cfg); err != nil {
-		return CheckResult{
-			Name:     "config",
-			Status:   StatusFail,
-			Message:  fmt.Sprintf("target-policy mismatch: %v", err),
 			Blocking: true,
 		}
 	}

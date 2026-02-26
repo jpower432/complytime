@@ -94,27 +94,12 @@ func ParsePolicyRef(raw string) PolicyRef {
 	return ref
 }
 
-// FindPolicy matches a policy identifier against the policies list.
-// Tries: effective ID, full URL, repository path.
-// Returns the matching entry and true if found.
+// FindPolicy matches a policy identifier against the policies list by effective ID.
 func FindPolicy(policies []PolicyEntry, policyID string) (*PolicyEntry, bool) {
 	policyID = strings.TrimSpace(policyID)
 
 	for i, p := range policies {
 		if p.EffectiveID() == policyID {
-			return &policies[i], true
-		}
-	}
-
-	for i, p := range policies {
-		if p.URL == policyID {
-			return &policies[i], true
-		}
-	}
-
-	for i, p := range policies {
-		ref := ParsePolicyRef(p.URL)
-		if ref.Repository == policyID {
 			return &policies[i], true
 		}
 	}
@@ -129,12 +114,6 @@ func PolicyIDs(policies []PolicyEntry) map[string]*PolicyEntry {
 		m[policies[i].EffectiveID()] = &policies[i]
 	}
 	return m
-}
-
-// Load reads, parses, and validates the complytime configuration from the
-// default complytime.yaml path.
-func Load() (*WorkspaceConfig, error) {
-	return LoadFrom(WorkspaceConfigFile)
 }
 
 // LoadFrom reads, parses, and validates the complytime configuration from the
@@ -199,11 +178,6 @@ func expandEnvRef(s string) (string, error) {
 	return result, nil
 }
 
-// Save writes complytime configuration to the default complytime.yaml path.
-func Save(config *WorkspaceConfig) error {
-	return SaveTo(config, WorkspaceConfigFile)
-}
-
 // SaveTo writes complytime configuration to the given path.
 func SaveTo(config *WorkspaceConfig, configPath string) error {
 	data, err := yaml.Marshal(config)
@@ -263,54 +237,16 @@ func Validate(config *WorkspaceConfig) error {
 		if len(target.Policies) == 0 {
 			return fmt.Errorf("targets[%s].policies: at least one required", target.ID)
 		}
+		seenTargetPolicies := make(map[string]bool)
 		for _, pid := range target.Policies {
 			if _, ok := policyLookup[pid]; !ok {
 				return fmt.Errorf("targets[%s]: policy %q not in policies list", target.ID, pid)
 			}
+			if seenTargetPolicies[pid] {
+				return fmt.Errorf("targets[%s]: duplicate policy %s", target.ID, pid)
+			}
+			seenTargetPolicies[pid] = true
 		}
 	}
 	return nil
-}
-
-// UniqueRegistries extracts the distinct registry URLs from all policy entries.
-func UniqueRegistries(policies []PolicyEntry) []string {
-	seen := make(map[string]bool)
-	var registries []string
-	for _, p := range policies {
-		ref := ParsePolicyRef(p.URL)
-		if ref.Registry != "" && !seen[ref.Registry] {
-			seen[ref.Registry] = true
-			registries = append(registries, ref.Registry)
-		}
-	}
-	return registries
-}
-
-// ValidateTargetPolicyVersions ensures every target references policies that
-// exist in the workspace policies list (by effective ID) with no duplicates.
-func ValidateTargetPolicyVersions(config *WorkspaceConfig) error {
-	lookup := PolicyIDs(config.Policies)
-	for _, target := range config.Targets {
-		seen := make(map[string]bool)
-		for _, pid := range target.Policies {
-			if _, ok := lookup[pid]; !ok {
-				return fmt.Errorf("target %s: policy %q not in policies list", target.ID, pid)
-			}
-			if seen[pid] {
-				return fmt.Errorf("target %s: duplicate policy %s", target.ID, pid)
-			}
-			seen[pid] = true
-		}
-	}
-	return nil
-}
-
-// ResolvePolicyForTarget looks up a target's policy reference against the
-// workspace policies and returns the parsed OCI reference.
-func ResolvePolicyForTarget(policies []PolicyEntry, targetPolicyID string) (*PolicyEntry, PolicyRef, bool) {
-	entry, found := FindPolicy(policies, targetPolicyID)
-	if !found {
-		return nil, PolicyRef{}, false
-	}
-	return entry, ParsePolicyRef(entry.URL), true
 }

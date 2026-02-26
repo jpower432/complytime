@@ -23,7 +23,6 @@ type scanOptions struct {
 	*Common
 	policyID  string
 	format    string
-	dryRun    bool
 	timeout   time.Duration
 	cacheDir  string
 	pluginDir string
@@ -54,7 +53,6 @@ func scanCmd(common *Common) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&o.policyID, "policy-id", "p", "", "Policy ID to scan (required)")
 	cmd.Flags().StringVarP(&o.format, "format", "f", "", "Output format: oscal, pretty, sarif")
-	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "Generate artifacts and show execution plan without scanning")
 	cmd.Flags().DurationVarP(&o.timeout, "timeout", "t", complytime.DefaultCommandTimeout, "Maximum time for the scan operation (e.g. 5m, 10m, 1h)")
 	if err := cmd.MarkFlagRequired("policy-id"); err != nil {
 		logger.Error("Failed to mark policy-id as required", "error", err)
@@ -212,40 +210,6 @@ func (o *scanOptions) run(ctx context.Context) error {
 		}
 	}
 
-	// --dry-run: persist GenerationState and output execution plan, then exit.
-	// "Dry" means "don't scan," not "don't generate."
-	// See FR-033: specs/001-gemara-native-workflow/spec.md
-	if o.dryRun {
-		var routes []output.EvaluatorRoute
-		for evalID, group := range groups {
-			route := output.EvaluatorRoute{
-				EvaluatorID:      evalID,
-				RequirementCount: len(group.Configs),
-				Status:           "healthy",
-			}
-			if lp, lookupErr := mgr.GetPlugin(evalID); lookupErr == nil {
-				route.PluginPath = lp.Info.ExecutablePath
-			} else {
-				route.Status = "ERROR"
-			}
-			routes = append(routes, route)
-		}
-
-		var scopes []output.TargetScope
-		for _, t := range targets {
-			if slices.Contains(t.Policies, eid) {
-				scopes = append(scopes, output.TargetScope{
-					TargetID:     t.ID,
-					PolicyID:     ref.Repository,
-					EvaluatorIDs: evaluatorIDs,
-				})
-			}
-		}
-
-		fmt.Print(output.FormatExecutionPlan(ref.Repository, routes, scopes))
-		return nil
-	}
-
 	// Pre-scan summary (FR-034)
 	var targetIDs []string
 	for _, t := range targets {
@@ -278,15 +242,6 @@ func (o *scanOptions) run(ctx context.Context) error {
 
 		for evalID := range groups {
 			results, routeErr := mgr.RouteScan(ctx, evalID, pluginTargets)
-			if routeErr != nil {
-				scanSpin.Stop()
-				return routeErr
-			}
-			assessments = append(assessments, results...)
-		}
-
-		if len(groups) == 0 {
-			results, routeErr := mgr.RouteScan(ctx, "", pluginTargets)
 			if routeErr != nil {
 				scanSpin.Stop()
 				return routeErr

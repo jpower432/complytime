@@ -12,33 +12,6 @@ import (
 	"github.com/complytime/complyctl/internal/registry"
 )
 
-func TestClient_GetDefinitions_WithMockFetcher(t *testing.T) {
-	mock := registry.NewMockFetcher()
-	mock.SeedTestPolicy("test-policy")
-
-	client := registry.NewClientWithFetcher("mock-registry", nil, mock)
-
-	data, err := client.GetDefinitions(context.Background(), "test-policy", "v1.0.0")
-	require.NoError(t, err)
-	assert.NotEmpty(t, data)
-}
-
-func TestClient_GetDefinitions_EmptyPath(t *testing.T) {
-	client := registry.NewClientWithFetcher("mock-registry", nil, registry.NewMockFetcher())
-
-	_, err := client.GetDefinitions(context.Background(), "", "v1.0.0")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "module path cannot be empty")
-}
-
-func TestClient_GetDefinitions_EmptyVersion(t *testing.T) {
-	client := registry.NewClientWithFetcher("mock-registry", nil, registry.NewMockFetcher())
-
-	_, err := client.GetDefinitions(context.Background(), "test-policy", "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "version cannot be empty")
-}
-
 func TestClient_DefinitionVersion_WithMockFetcher(t *testing.T) {
 	mock := registry.NewMockFetcher()
 	mock.SeedTestPolicy("test-policy")
@@ -66,12 +39,4 @@ func TestClient_DefinitionVersion_NotFound(t *testing.T) {
 	_, _, err := client.DefinitionVersion(context.Background(), "nonexistent")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
-}
-
-func TestClient_GetDefinitions_PolicyNotSeeded(t *testing.T) {
-	mock := registry.NewMockFetcher()
-	client := registry.NewClientWithFetcher("mock-registry", nil, mock)
-
-	_, err := client.GetDefinitions(context.Background(), "missing-policy", "v1.0.0")
-	require.Error(t, err)
 }

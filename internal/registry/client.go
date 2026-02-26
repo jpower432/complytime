@@ -5,7 +5,6 @@ package registry
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -13,6 +12,11 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 )
+
+// Fetcher abstracts registry access for testing without a live OCI registry.
+type Fetcher interface {
+	DefinitionVersion(ctx context.Context, modulePath string) (string, string, error)
+}
 
 // Client provides OCI registry access with credential-based auth via oras-go.
 type Client struct {
@@ -38,28 +42,6 @@ func NewClientWithFetcher(registryURL string, credFunc auth.CredentialFunc, fetc
 		fetcher:     fetcher,
 		plainHTTP:   strings.HasPrefix(registryURL, "http://"),
 	}
-}
-
-func (c *Client) GetDefinitions(ctx context.Context, modulePath, version string) ([]byte, error) {
-	if modulePath == "" {
-		return nil, fmt.Errorf("module path cannot be empty")
-	}
-
-	if version == "" {
-		return nil, fmt.Errorf("version cannot be empty")
-	}
-
-	if c.fetcher != nil {
-		return c.fetcher.GetDefinitions(ctx, modulePath, version)
-	}
-
-	ref := fmt.Sprintf("%s/%s:%s", c.registryHost(), modulePath, version)
-	data, err := c.fetchManifest(ctx, ref)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch definitions for %s@%s: %w", modulePath, version, err)
-	}
-
-	return data, nil
 }
 
 func (c *Client) DefinitionVersion(ctx context.Context, modulePath string) (string, string, error) {
@@ -111,37 +93,6 @@ func (c *Client) newRepository(repoName string) (*remote.Repository, error) {
 		}
 	}
 	return repo, nil
-}
-
-func (c *Client) fetchManifest(ctx context.Context, ref string) ([]byte, error) {
-	parsedRef, err := registry.ParseReference(ref)
-	if err != nil {
-		return nil, fmt.Errorf("invalid OCI reference %s: %w", ref, err)
-	}
-
-	repoName := fmt.Sprintf("%s/%s", parsedRef.Registry, parsedRef.Repository)
-	repo, err := c.newRepository(repoName)
-	if err != nil {
-		return nil, err
-	}
-
-	tag := parsedRef.Reference
-	if tag == "" {
-		tag = "latest"
-	}
-
-	_, rc, err := repo.FetchReference(ctx, tag)
-	if err != nil {
-		return nil, fmt.Errorf("OCI manifest fetch failed for %s: %w", ref, err)
-	}
-	defer rc.Close()
-
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read OCI manifest data: %w", err)
-	}
-
-	return data, nil
 }
 
 func (c *Client) fetchVersion(ctx context.Context, ref string) (string, string, error) {

@@ -129,10 +129,6 @@ func (m *Manager) ListPlugins() []*LoadedPlugin {
 	return plugins
 }
 
-func (p *LoadedPlugin) GetEvaluatorIDs() []string {
-	return []string{p.Info.EvaluatorID}
-}
-
 // Cleanup kills all managed plugin subprocesses. Call via defer after LoadPlugins.
 func (m *Manager) Cleanup() {
 	goplugin.CleanupClients()

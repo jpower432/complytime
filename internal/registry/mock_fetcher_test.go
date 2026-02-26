@@ -48,26 +48,6 @@ func (m *MockFetcher) AddPolicy(modulePath, version, digest string, manifest []b
 	}
 }
 
-// GetDefinitions returns policy manifest for modulePath@version
-func (m *MockFetcher) GetDefinitions(ctx context.Context, modulePath, version string) ([]byte, error) {
-	_ = ctx
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	versions, ok := m.policies[modulePath]
-	if !ok {
-		return nil, fmt.Errorf("policy %s not found", modulePath)
-	}
-	p, ok := versions[version]
-	if !ok {
-		p = versions["latest"]
-	}
-	if p == nil {
-		return nil, fmt.Errorf("policy %s@%s not found", modulePath, version)
-	}
-	return p.Manifest, nil
-}
-
 // DefinitionVersion returns digest and version for modulePath
 func (m *MockFetcher) DefinitionVersion(ctx context.Context, modulePath string) (string, string, error) {
 	_ = ctx

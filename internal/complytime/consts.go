@@ -19,15 +19,8 @@ const WorkspaceDir = ".complytime"
 const StateFileName = "state.json"
 const PoliciesSubdir = "policies"
 const WorkspaceConfigFile = "complytime.yaml"
-const PackManifestFile = "complypack.yaml"
 
 const CurrentWorkspaceVersion = 1
-const CurrentPackSchemaVersion = 1
-
-const (
-	APIMethodGetDefinitions    = "GetDefinitions"
-	APIMethodDefinitionVersion = "DefinitionVersion"
-)
 
 const (
 	OutputFormatOSCAL  = "oscal"

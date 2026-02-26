@@ -51,40 +51,6 @@ func (l *Loader) ResolveVersion(policyID, configVersion string) (string, error) 
 	)
 }
 
-func (l *Loader) LoadPolicy(policyID, version string) ([]byte, error) {
-	if policyID == "" {
-		return nil, fmt.Errorf("policy ID cannot be empty")
-	}
-	if version == "" {
-		return nil, fmt.Errorf("version cannot be empty")
-	}
-
-	store, err := l.cacheMgr.NewPolicyStore(policyID)
-	if err != nil {
-		return nil, fmt.Errorf("policy not found in cache: %s: %w", policyID, err)
-	}
-
-	ctx := context.Background()
-
-	desc, err := store.Resolve(ctx, version)
-	if err != nil {
-		return nil, fmt.Errorf("policy %s@%s not in cache: %w", policyID, version, err)
-	}
-
-	rc, err := store.Fetch(ctx, desc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch policy manifest %s@%s: %w", policyID, version, err)
-	}
-	defer rc.Close()
-
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read policy manifest: %w", err)
-	}
-
-	return data, nil
-}
-
 // LoadLayerByMediaType loads a specific Gemara layer from the policy's OCI manifest
 // by matching the layer descriptor's media type.
 func (l *Loader) LoadLayerByMediaType(policyID, version, mediaType string) ([]byte, error) {

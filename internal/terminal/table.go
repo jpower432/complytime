@@ -5,63 +5,10 @@ package terminal
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-var (
-	baseStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("240"))
-	_ tea.Model = (*Model)(nil)
-)
-
-type Model struct {
-	Table table.Model
-	// displayed above table
-	HeaderMsg string
-	//displayed below table
-	HelpMsg string
-}
-
-func (m Model) Init() tea.Cmd { return nil }
-
-func (m Model) Update(_ tea.Msg) (tea.Model, tea.Cmd) {
-	return m, tea.Quit
-}
-
-func (m Model) View() string {
-
-	output := baseStyle.Render(m.Table.View()) + "\n"
-
-	if len(m.HeaderMsg) > 0 {
-		output = m.HeaderMsg + "\n" + output
-	}
-
-	if len(m.HelpMsg) > 0 {
-		output = output + m.HelpMsg + "\n"
-	}
-	return output
-}
-
-func WrapText(text string, lineWidth int) string {
-	words := strings.Fields(text)
-	var wrapped strings.Builder
-	currentLineLength := 0
-
-	for _, word := range words {
-		if currentLineLength+len(word) > lineWidth {
-			wrapped.WriteString("\n")
-			currentLineLength = 0
-		}
-		wrapped.WriteString(word + " ")
-		currentLineLength += len(word) + 1
-	}
-	return strings.TrimSpace(wrapped.String())
-}
 
 // AutoColumnWidths returns a copy of columns with widths set to the maximum
 // display width (header or cell) plus padding. Uses lipgloss.Width to

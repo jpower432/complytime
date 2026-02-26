@@ -60,11 +60,10 @@ func runDoctor(verbose bool) error {
 		return fmt.Errorf("failed to resolve plugin directory: %w", err)
 	}
 
-	cacheBaseDir, err := complytime.ResolveCacheDir()
+	cacheDir, err := complytime.ResolveCacheDir()
 	if err != nil {
 		return fmt.Errorf("failed to resolve cache directory: %w", err)
 	}
-	policiesCacheDir := filepath.Join(cacheBaseDir, complytime.PoliciesSubdir)
 
 	configPath := complytime.WorkspaceConfigFile
 	var cfg *complytime.WorkspaceConfig
@@ -74,6 +73,7 @@ func runDoctor(verbose bool) error {
 		cfg = loaded
 	}
 
+	policiesCacheDir := filepath.Join(cacheDir, complytime.PoliciesSubdir)
 	var resolver doctor.PolicyGraphResolver
 	cacheMgr := cache.NewCache(policiesCacheDir)
 	loader := policy.NewLoader(cacheMgr)
@@ -81,7 +81,7 @@ func runDoctor(verbose bool) error {
 
 	versionResolver := &registryVersionResolver{timeout: 5 * time.Second}
 
-	results := doctor.Run(cfg, configPath, pluginDir, cacheBaseDir, policiesCacheDir, resolver, versionResolver, verbose, logFile)
+	results := doctor.Run(cfg, configPath, pluginDir, cacheDir, resolver, versionResolver, verbose, logFile)
 
 	hasBlockingFailure := false
 	for _, r := range results {

@@ -94,24 +94,6 @@ func TestFindPolicy_ByDerivedID(t *testing.T) {
 	assert.Equal(t, "registry.com/policies/nist-800-53-r5@v1.0", entry.URL)
 }
 
-func TestFindPolicy_ByFullURL(t *testing.T) {
-	policies := []complytime.PolicyEntry{
-		{URL: "registry.com/policies/nist@v1.0", ID: "nist"},
-	}
-	entry, ok := complytime.FindPolicy(policies, "registry.com/policies/nist@v1.0")
-	assert.True(t, ok)
-	assert.Equal(t, "nist", entry.ID)
-}
-
-func TestFindPolicy_ByRepositoryPath(t *testing.T) {
-	policies := []complytime.PolicyEntry{
-		{URL: "registry.com/policies/nist@v1.0", ID: "nist"},
-	}
-	entry, ok := complytime.FindPolicy(policies, "policies/nist")
-	assert.True(t, ok)
-	assert.Equal(t, "nist", entry.ID)
-}
-
 func TestFindPolicy_NotFound(t *testing.T) {
 	policies := []complytime.PolicyEntry{
 		{URL: "registry.com/policies/nist@v1.0"},
@@ -238,47 +220,6 @@ func TestValidate_TargetNoPolicies(t *testing.T) {
 	err := complytime.Validate(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least one required")
-}
-
-func TestValidateTargetPolicyVersions_Valid(t *testing.T) {
-	cfg := &complytime.WorkspaceConfig{
-		Policies: []complytime.PolicyEntry{
-			{URL: "registry.com/a@v1", ID: "a"},
-			{URL: "registry.com/b@v2", ID: "b"},
-		},
-		Targets: []complytime.TargetConfig{{
-			ID:       "local",
-			Policies: []string{"a"},
-		}},
-	}
-	assert.NoError(t, complytime.ValidateTargetPolicyVersions(cfg))
-}
-
-func TestValidateTargetPolicyVersions_Missing(t *testing.T) {
-	cfg := &complytime.WorkspaceConfig{
-		Policies: []complytime.PolicyEntry{
-			{URL: "registry.com/a@v1", ID: "a"},
-		},
-		Targets: []complytime.TargetConfig{{
-			ID:       "local",
-			Policies: []string{"nonexistent"},
-		}},
-	}
-	err := complytime.ValidateTargetPolicyVersions(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not in policies list")
-}
-
-func TestUniqueRegistries(t *testing.T) {
-	policies := []complytime.PolicyEntry{
-		{URL: "registry.com/a@v1"},
-		{URL: "registry.com/b@v2"},
-		{URL: "ghcr.io/c@v1"},
-	}
-	regs := complytime.UniqueRegistries(policies)
-	assert.Len(t, regs, 2)
-	assert.Contains(t, regs, "registry.com")
-	assert.Contains(t, regs, "ghcr.io")
 }
 
 func TestPolicyIDs(t *testing.T) {
