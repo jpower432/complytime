@@ -3,131 +3,133 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/oscal-compass/oscal-sdk-go/validation"
 	"github.com/spf13/cobra"
 
-	"github.com/complytime/complyctl/cmd/complyctl/option"
+	"github.com/complytime/complyctl/internal/cache"
 	"github.com/complytime/complyctl/internal/complytime"
+	"github.com/complytime/complyctl/internal/policy"
 	"github.com/complytime/complyctl/internal/terminal"
 )
 
-// listOptions defines options for the "list" subcommand
 type listOptions struct {
-	*option.Common
-	// print a plain table only
-	plain bool
+	*Common
+	plain    bool
+	policyID string
+	cacheDir string
 }
 
-// listCmd creates a new cobra.Command for the "list" subcommand
-func listCmd(common *option.Common) *cobra.Command {
-	listOpts := &listOptions{
+func listCmd(common *Common) *cobra.Command {
+	o := &listOptions{
 		Common: common,
 	}
 	cmd := &cobra.Command{
 		Use:          "list [flags]",
-		Short:        "List information about supported frameworks and components.",
+		Short:        "List cached Gemara policies",
 		SilenceUsage: true,
-		Example:      "complyctl list",
+		Example:      "complyctl list\n  complyctl list --plain\n  complyctl list --policy-id nist-800-53-r5",
 		Args:         cobra.NoArgs,
-		RunE:         func(_ *cobra.Command, _ []string) error { return runList(listOpts) },
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := o.validate(); err != nil {
+				return err
+			}
+			if err := o.complete(); err != nil {
+				return err
+			}
+			return o.run(cmd.Context())
+		},
 	}
-	cmd.Flags().BoolVarP(&listOpts.plain, "plain", "p", false, "print the table with minimal formatting")
+	cmd.Flags().BoolVarP(&o.plain, "plain", "", false, "print table with minimal formatting")
+	cmd.Flags().StringVar(&o.policyID, "policy-id", "", "Filter by policy ID")
 	return cmd
 }
 
-func runList(opts *listOptions) error {
-	appDir, err := complytime.NewApplicationDirectory(true, logger)
-	if err != nil {
-		return err
-	}
-	logger.Debug(fmt.Sprintf("Using application directory: %s", appDir.AppDir()))
+func (o *listOptions) validate() error {
+	return nil
+}
 
-	validator := validation.NewSchemaValidator()
-	frameworks, err := complytime.LoadFrameworks(appDir, validator)
+func (o *listOptions) complete() error {
+	var err error
+	o.cacheDir, err = complytime.ResolveCacheDir()
 	if err != nil {
-		return err
-	}
-
-	if opts.plain {
-		showDefinitionTable(opts.Out, frameworks)
-	} else {
-		model := showPrettyDefinitionTable(frameworks)
-		if _, err := tea.NewProgram(model, tea.WithOutput(opts.Out)).Run(); err != nil {
-			return fmt.Errorf("failed to display component list: %w", err)
-		}
+		return fmt.Errorf("failed to resolve cache directory: %w", err)
 	}
 	return nil
 }
 
-// ShowDefinitionTable prints a plain table with given framework data.
-func showDefinitionTable(writer io.Writer, frameworks []complytime.Framework) {
-	columns, rows := getDefinitionColumnsAndRows(frameworks)
-	terminal.ShowPlainTable(writer, columns, rows)
+func (o *listOptions) run(_ context.Context) error {
+	ws := complytime.NewWorkspace()
+	if err := ws.LoadAndValidate(); err != nil {
+		return fmt.Errorf("failed to load complytime: %w", err)
+	}
+
+	cfg := ws.Config()
+
+	cacheMgr := cache.NewCache(o.cacheDir)
+	loader := policy.NewLoader(cacheMgr)
+
+	cached, err := loader.ListCachedPolicies()
+	if err != nil {
+		logger.Error("List cached policies failed", "error", err)
+		return fmt.Errorf("failed to list cached policies: %w", err)
+	}
+
+	for _, p := range cfg.Policies {
+		ref := complytime.ParsePolicyRef(p.URL)
+		if _, ok := cached[ref.Repository]; !ok {
+			cached[ref.Repository] = []string{"(not cached — " + p.EffectiveID() + ")"}
+		}
+	}
+
+	if o.policyID != "" {
+		if versions, ok := cached[o.policyID]; ok {
+			cached = map[string][]string{o.policyID: versions}
+		} else {
+			cached = map[string][]string{}
+		}
+	}
+
+	return printGemaraPolicyTable(o.Out, cached, o.plain)
 }
 
-// ShowPrettyDefinitionTable returns a Model to be used with a `bubbletea` Program that
-// renders a table with given Framework data.
-func showPrettyDefinitionTable(frameworks []complytime.Framework) terminal.Model {
-	columns, rows := getDefinitionColumnsAndRows(frameworks)
+func printGemaraPolicyTable(w io.Writer, policies map[string][]string, plain bool) error {
+	rows := make([]table.Row, 0, len(policies))
+	for id, vers := range policies {
+		sort.Strings(vers)
+		rows = append(rows, table.Row{id, strings.Join(vers, ", ")})
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
+
+	columns := terminal.AutoColumnWidths([]table.Column{
+		{Title: "Policy ID"},
+		{Title: "Versions"},
+	}, rows, 2)
+
+	if plain {
+		terminal.ShowPlainTable(w, columns, rows)
+		return nil
+	}
+
 	tbl := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithFocused(true),
-		table.WithHeight(7),
+		table.WithHeight(min(7, len(rows)+2)),
 	)
-
 	tableStyle := table.DefaultStyles()
 	tableStyle.Header = tableStyle.Header.
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		BorderBottom(true).
 		Bold(false)
-	tableStyle.Cell = tableStyle.Cell.
-		Foreground(lipgloss.Color("250")).
-		Bold(true)
 	tbl.SetStyles(tableStyle)
-
-	return terminal.Model{
-		Table:   tbl,
-		HelpMsg: "Choose an option from the Framework ID column to use with complyctl plan.",
-	}
-}
-
-// getDefinitionColumnsAndRows returns populate columns and row for printing tables.
-func getDefinitionColumnsAndRows(frameworks []complytime.Framework) ([]table.Column, []table.Row) {
-	var rows []table.Row
-	for _, framework := range frameworks {
-		row := table.Row{framework.Title, framework.ID, strings.Join(framework.SupportedComponents, ", ")}
-		rows = append(rows, row)
-	}
-	// Sort the rows slice by the framework short name
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i][1] < rows[j][1] })
-
-	// Set columns with default widths
-	columns := []table.Column{
-		{Title: "Title", Width: 30},
-		{Title: "Framework ID", Width: 20},
-		{Title: "Supported Components", Width: 30},
-	}
-
-	// Calculate column width based on rows
-	if len(rows) > 0 {
-		for _, row := range rows {
-			for i, cell := range row {
-				if len(cell) > columns[i].Width {
-					columns[i].Width = len(cell)
-				}
-			}
-		}
-	}
-
-	return columns, rows
+	fmt.Fprintln(w, tbl.View())
+	return nil
 }

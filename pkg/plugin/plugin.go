@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package plugin
+
+import (
+	"context"
+
+	proto "github.com/complytime/complyctl/api/plugin"
+	goplugin "github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc"
+)
+
+// Handshake is the shared complytime that plugins must match to connect.
+var Handshake = goplugin.HandshakeConfig{
+	ProtocolVersion: 1,
+	MagicCookieKey:  "COMPLYCTL_PLUGIN",
+	// DO NOT CHANGE - UUID
+	MagicCookieValue: "ddff478d-578e-4d9d-8253-35e8ebf548d2",
+}
+
+// SupportedPlugins is the plugin type map used when creating go-plugin clients.
+var SupportedPlugins = map[string]goplugin.Plugin{
+	"evaluator": &GRPCEvaluatorPlugin{},
+}
+
+// GRPCEvaluatorPlugin implements hashicorp/go-plugin.GRPCPlugin for the
+// evaluator service.
+type GRPCEvaluatorPlugin struct {
+	goplugin.Plugin
+	Impl Plugin
+}
+
+func (p *GRPCEvaluatorPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
+	proto.RegisterPluginServer(s, &grpcServer{impl: p.Impl})
+	return nil
+}
+
+func (p *GRPCEvaluatorPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+	return proto.NewPluginClient(c), nil
+}
+
+// Serve starts the plugin process. Plugin authors call this from main().
+func Serve(impl Plugin) {
+	goplugin.Serve(&goplugin.ServeConfig{
+		HandshakeConfig: Handshake,
+		Plugins: map[string]goplugin.Plugin{
+			"evaluator": &GRPCEvaluatorPlugin{Impl: impl},
+		},
+		GRPCServer: goplugin.DefaultGRPCServer,
+	})
+}

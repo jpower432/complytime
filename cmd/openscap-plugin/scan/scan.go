@@ -3,6 +3,7 @@
 package scan
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -29,7 +30,7 @@ func validateOpenSCAPFiles(cfg *config.Config) (map[string]string, error) {
 	}, nil
 }
 
-func ScanSystem(cfg *config.Config, profile string) ([]byte, error) {
+func ScanSystem(ctx context.Context, cfg *config.Config, profile string) ([]byte, error) {
 	openscapFiles, err := validateOpenSCAPFiles(cfg)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -44,7 +45,7 @@ func ScanSystem(cfg *config.Config, profile string) ([]byte, error) {
 	// id exists in the tailoring file. It is not a common case but a guardrail to prevent manual
 	// manipulation of the tailoring file would be good.
 
-	output, err := oscap.OscapScan(openscapFiles, tailoringProfile)
+	output, err := oscap.OscapScan(ctx, openscapFiles, tailoringProfile)
 	if err != nil {
 		return output, fmt.Errorf("failed during scan: %w", err)
 	}

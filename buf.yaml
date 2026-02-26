@@ -1,0 +1,9 @@
+version: v2
+modules:
+  - path: api/plugin
+lint:
+  use:
+    - DEFAULT
+breaking:
+  use:
+    - FILE

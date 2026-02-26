@@ -58,6 +58,11 @@ mkdir -p ${GO_BUILD_BINDIR}
 # Not calling the macro for more control on go env variables
 go build -buildmode=pie -o ${GO_BUILD_BINDIR}/ -ldflags="${GO_LD_EXTRAFLAGS}" ./cmd/...
 
+# Build openscap-plugin (separate Go module)
+cd cmd/openscap-plugin
+go build -buildmode=pie -o ../../${GO_BUILD_BINDIR}/openscap-plugin -ldflags="${GO_LD_EXTRAFLAGS}" .
+cd ../..
+
 %install
 # Install complyctl directories
 install -d %{buildroot}%{_bindir}
@@ -97,6 +102,8 @@ fi
 %check
 # Run unit tests
 go test -mod=vendor -race -v ./...
+cd cmd/openscap-plugin && go test -mod=vendor -race -v ./...
+cd ../..
 
 %files
 %attr(0755, root, root) %{_bindir}/complyctl

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xccdf-1.2:Tailoring xmlns:xccdf-1.2="http://checklists.nist.gov/xccdf/1.2" id="xccdf_complytime.openscapplugin_tailoring_complytime">
+  <xccdf-1.2:benchmark href="/usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml"></xccdf-1.2:benchmark>
+  <xccdf-1.2:version time="2026-02-25T20:07:55-05:00">1</xccdf-1.2:version>
+  <xccdf-1.2:Profile id="xccdf_complytime.openscapplugin_profile_cis_workstation_l1_complytime" extends="xccdf_org.ssgproject.content_profile_cis_workstation_l1">
+    <xccdf-1.2:title override="true">ComplyTime Tailoring Profile - DRAFT - CIS Fedora Benchmark for Level 1 - Workstation</xccdf-1.2:title>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_accounts_user_dot_no_world_writable_programs" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_configure_crypto_policy" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_etc_security_opasswd" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_groupowner_grub2_cfg" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_groupowner_user_cfg" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_owner_grub2_cfg" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_owner_user_cfg" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_permissions_grub2_cfg" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_permissions_ungroupowned" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_file_permissions_user_cfg" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_no_files_unowned_by_user" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_set_password_hashing_algorithm_libuserconf" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sshd_use_strong_kex" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sshd_use_strong_macs" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sudo_require_authentication" selected="false"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_accounts_password_pam_pwquality_password_auth" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_accounts_password_pam_pwquality_system_auth" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_coredump_disable_backtraces" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_coredump_disable_storage" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_dconf_gnome_screensaver_user_locks" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_dconf_gnome_session_idle_user_locks" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_disable_users_coredumps" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_kernel_module_atm_disabled" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_kernel_module_can_disabled" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_kernel_module_dccp_disabled" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_kernel_module_rds_disabled" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sudo_remove_no_authenticate" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_fs_protected_hardlinks" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_fs_protected_symlinks" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_fs_suid_dumpable" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_dmesg_restrict" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_kptr_restrict" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space" selected="true"></xccdf-1.2:select>
+    <xccdf-1.2:select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_yama_ptrace_scope" selected="true"></xccdf-1.2:select>
+  </xccdf-1.2:Profile>
+</xccdf-1.2:Tailoring>

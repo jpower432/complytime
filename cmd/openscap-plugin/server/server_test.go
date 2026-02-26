@@ -8,63 +8,64 @@ import (
 	"testing"
 
 	"github.com/antchfx/xmlquery"
-	"github.com/oscal-compass/compliance-to-policy-go/v2/policy"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/complytime/complyctl/pkg/plugin"
 )
 
 func TestMapResultStatus(t *testing.T) {
 	tests := []struct {
 		name           string
 		xmlContent     string
-		expectedResult policy.Result
+		expectedResult plugin.Result
 		expectedError  error
 	}{
 		{
 			name:           "Pass result",
 			xmlContent:     `<rule-result><result>pass</result></rule-result>`,
-			expectedResult: policy.ResultPass,
+			expectedResult: plugin.ResultPassed,
 			expectedError:  nil,
 		},
 		{
 			name:           "Fail result",
 			xmlContent:     `<rule-result><result>fail</result></rule-result>`,
-			expectedResult: policy.ResultFail,
+			expectedResult: plugin.ResultFailed,
 			expectedError:  nil,
 		},
 		{
 			name:           "Not selected result",
 			xmlContent:     `<rule-result><result>notselected</result></rule-result>`,
-			expectedResult: policy.ResultError,
+			expectedResult: plugin.ResultSkipped,
 			expectedError:  nil,
 		},
 		{
-			name:           "Not selected result",
+			name:           "Not applicable result",
 			xmlContent:     `<rule-result><result>notapplicable</result></rule-result>`,
-			expectedResult: policy.ResultError,
+			expectedResult: plugin.ResultSkipped,
 			expectedError:  nil,
 		},
 		{
 			name:           "Error result",
 			xmlContent:     `<rule-result><result>error</result></rule-result>`,
-			expectedResult: policy.ResultError,
+			expectedResult: plugin.ResultError,
 			expectedError:  nil,
 		},
 		{
 			name:           "Unknown result",
 			xmlContent:     `<rule-result><result>unknown</result></rule-result>`,
-			expectedResult: policy.ResultError,
+			expectedResult: plugin.ResultError,
 			expectedError:  nil,
 		},
 		{
 			name:           "Invalid result",
 			xmlContent:     `<rule-result><result>invalid</result></rule-result>`,
-			expectedResult: policy.ResultInvalid,
+			expectedResult: plugin.ResultError,
 			expectedError:  errors.New("couldn't match invalid"),
 		},
 		{
 			name:           "No result element",
 			xmlContent:     `<rule-result></rule-result>`,
-			expectedResult: policy.ResultInvalid,
+			expectedResult: plugin.ResultError,
 			expectedError:  errors.New("result node has no 'result' attribute"),
 		},
 	}

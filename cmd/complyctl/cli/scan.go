@@ -3,193 +3,353 @@
 package cli
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
+	"slices"
+	"time"
 
-	"github.com/oscal-compass/compliance-to-policy-go/v2/framework"
-	"github.com/oscal-compass/compliance-to-policy-go/v2/framework/actions"
-	"github.com/oscal-compass/oscal-sdk-go/extensions"
-	"github.com/oscal-compass/oscal-sdk-go/settings"
-	"github.com/oscal-compass/oscal-sdk-go/validation"
 	"github.com/spf13/cobra"
 
-	"github.com/complytime/complyctl/cmd/complyctl/option"
+	"github.com/complytime/complyctl/internal/cache"
 	"github.com/complytime/complyctl/internal/complytime"
+	"github.com/complytime/complyctl/internal/output"
+	"github.com/complytime/complyctl/internal/policy"
 	"github.com/complytime/complyctl/internal/terminal"
+	"github.com/complytime/complyctl/pkg/plugin"
 )
 
-const assessmentResultsLocationJson = "assessment-results.json"
-const assessmentResultsLocationMd = "assessment-results.md"
-
-// scanOptions defined options for the scan subcommand.
 type scanOptions struct {
-	*option.Common
-	complyTimeOpts   *option.ComplyTime
-	withPluginConfig string
+	*Common
+	policyID  string
+	format    string
+	dryRun    bool
+	timeout   time.Duration
+	cacheDir  string
+	pluginDir string
 }
 
-// scanCmd creates a new cobra.Command for the version subcommand.
-func scanCmd(common *option.Common) *cobra.Command {
-	scanOpts := &scanOptions{
-		Common:         common,
-		complyTimeOpts: &option.ComplyTime{},
+func scanCmd(common *Common) *cobra.Command {
+	o := &scanOptions{
+		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:          "scan [flags]",
-		Short:        "Scan environment with assessment plan",
-		Example:      "complyctl scan",
+		Use:   "scan [flags]",
+		Short: "Scan targets and produce compliance reports",
+		Example: `complyctl scan --policy-id nist-800-53-r5
+  complyctl scan --policy-id nist-800-53-r5 --format pretty
+  complyctl scan --policy-id nist-800-53-r5 --format oscal
+  complyctl scan --policy-id nist-800-53-r5 --format sarif`,
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// Ensure user workspace exists before proceeding
-			return complytime.EnsureUserWorkspace(scanOpts.complyTimeOpts.UserWorkspace)
-		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runScan(cmd, scanOpts)
+			if err := o.validate(); err != nil {
+				return err
+			}
+			if err := o.complete(); err != nil {
+				return err
+			}
+			return o.run(cmd.Context())
 		},
 	}
-	cmd.Flags().StringVarP(&scanOpts.withPluginConfig, "plugin-config", "c", "", "Directory where user customized plugin manifests are located")
-	cmd.Flags().BoolP("with-md", "m", false, "If true, assessment-result markdown will be generated")
-	scanOpts.complyTimeOpts.BindFlags(cmd.Flags())
+	cmd.Flags().StringVarP(&o.policyID, "policy-id", "p", "", "Policy ID to scan (required)")
+	cmd.Flags().StringVarP(&o.format, "format", "f", "", "Output format: oscal, pretty, sarif")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "Generate artifacts and show execution plan without scanning")
+	cmd.Flags().DurationVarP(&o.timeout, "timeout", "t", complytime.DefaultCommandTimeout, "Maximum time for the scan operation (e.g. 5m, 10m, 1h)")
+	if err := cmd.MarkFlagRequired("policy-id"); err != nil {
+		logger.Error("Failed to mark policy-id as required", "error", err)
+	}
 	return cmd
 }
 
-func runScan(cmd *cobra.Command, opts *scanOptions) error {
-	validator := validation.NewSchemaValidator()
-	// Load settings from assessment plan
-	ap, apCleanedPath, err := loadPlan(opts.complyTimeOpts, validator)
-	if err != nil {
-		return err
-	}
-
-	inputContext, err := complytime.ActionsContextFromPlan(ap)
-	if err != nil {
-		return err
-	}
-
-	// Create the application directory if it does not exist
-	appDir, err := complytime.NewApplicationDirectory(true, logger)
-	if err != nil {
-		return err
-	}
-	logger.Debug(fmt.Sprintf("Using application directory: %s", appDir.AppDir()))
-
-	cfg, err := complytime.Config(appDir)
-	if err != nil {
-		return err
-	}
-
-	// set config logger to CLI charm logger
-	cfg.Logger = logger
-
-	manager, err := framework.NewPluginManager(cfg)
-	if err != nil {
-		return fmt.Errorf("error initializing plugin manager: %w", err)
-	}
-
-	// Determine what profile to load from framework information captured
-	// from state (assessment plan). This is required to populate complyTime required plugin options.
-	frameworkProp, valid := extensions.GetTrestleProp(extensions.FrameworkProp, *ap.Metadata.Props)
-	if !valid {
-		return fmt.Errorf("error reading framework property from assessment plan")
-	}
-	opts.complyTimeOpts.FrameworkID = frameworkProp.Value
-	logger.Debug(fmt.Sprintf("Framework property was successfully read from the assessment plan: %v.", frameworkProp))
-
-	pluginOptions := opts.complyTimeOpts.ToPluginOptions()
-	pluginOptions.UserConfigRoot = opts.withPluginConfig
-	plugins, cleanup, err := complytime.Plugins(manager, inputContext, pluginOptions, logger)
-	if cleanup != nil {
-		defer cleanup()
-	}
-	if err != nil {
-		return fmt.Errorf("errors launching plugins: %w", err)
-	}
-	logger.Info(fmt.Sprintf("Successfully loaded %v plugin(s).", len(plugins)))
-
-	logger.Info("Scanning (this may take some time depending on the system and controls)...")
-	stopSpinner := make(chan int)
-	go terminal.ShowSpinner(stopSpinner)
-
-	allResults, err := actions.AggregateResults(cmd.Context(), inputContext, plugins)
-	stopSpinner <- 1
-
-	if err != nil {
-		return err
-	}
-	logger.Info("Scan completed successfully.")
-
-	// Collect results in a single report
-	planHref := fmt.Sprintf("file://%s", apCleanedPath)
-	assessmentResults, err := actions.Report(cmd.Context(), inputContext, planHref, *ap, allResults)
-	if err != nil {
-		return err
-	}
-	arJsonPath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentResultsLocationJson)
-	err = complytime.WriteAssessmentResults(assessmentResults, arJsonPath)
-	if err != nil {
-		return err
-	}
-	logger.Info(fmt.Sprintf("The assessment results in JSON were successfully written to %v.", arJsonPath))
-
-	outputFlag, _ := cmd.Flags().GetBool("with-md")
-	if outputFlag {
-		var profileHref string
-		compDefs, err := complytime.FindComponentDefinitions(appDir.BundleDir(), validator)
-		if err != nil {
-			return err
+func (o *scanOptions) validate() error {
+	if o.format != "" {
+		switch o.format {
+		case complytime.OutputFormatOSCAL, complytime.OutputFormatPretty, complytime.OutputFormatSARIF:
+		default:
+			return fmt.Errorf("invalid format %q: must be one of %s, %s, %s",
+				o.format, complytime.OutputFormatOSCAL, complytime.OutputFormatPretty, complytime.OutputFormatSARIF)
 		}
-		for _, compDef := range compDefs {
-			if compDef.Components == nil {
-				continue
-			}
-			for _, component := range *compDef.Components {
-				if component.ControlImplementations == nil {
-					continue
-				}
-				for _, implementation := range *component.ControlImplementations {
-					frameworkShortName, found := settings.GetFrameworkShortName(implementation)
-					// If the framework property value match the assessment plan framework property values
-					// this is the correct control source.
-					if found && frameworkShortName == frameworkProp.Value {
-						profileHref = implementation.Source
-						break
-					}
-				}
-				if profileHref != "" {
-					break
-				}
-			}
-		}
-
-		profile, err := complytime.LoadProfile(appDir, profileHref, validator)
-		if err != nil {
-			return err
-		}
-
-		if len(profile.Imports) != 1 {
-			return errors.New("profile imports must be one")
-		}
-		catalog, err := complytime.LoadCatalogSource(appDir, profile.Imports[0].Href, validator)
-		if err != nil {
-			return err
-		}
-		arMarkdownPath := filepath.Join(opts.complyTimeOpts.UserWorkspace, assessmentResultsLocationMd)
-
-		posture := framework.NewPosture(assessmentResults, catalog, ap, logger)
-		assessmentResultsMd, err := posture.Generate(arMarkdownPath)
-		if err != nil {
-			return err
-		}
-		err = os.WriteFile(arMarkdownPath, assessmentResultsMd, 0600)
-		if err != nil {
-			return err
-		}
-		logger.Info(fmt.Sprintf("The assessment results in markdown were successfully written to %v.", arMarkdownPath))
-	} else {
-		logger.Info("No assessment result in markdown will be generated.")
 	}
 	return nil
+}
+
+func (o *scanOptions) complete() error {
+	var err error
+	o.cacheDir, err = complytime.ResolveCacheDir()
+	if err != nil {
+		return fmt.Errorf("failed to resolve cache directory: %w", err)
+	}
+	o.pluginDir, err = complytime.ResolvePluginDir()
+	if err != nil {
+		return fmt.Errorf("failed to resolve plugin directory: %w", err)
+	}
+	return nil
+}
+
+func (o *scanOptions) run(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
+
+	ws := complytime.NewWorkspace()
+	if err := ws.LoadAndValidate(); err != nil {
+		return fmt.Errorf("failed to load complytime: %w", err)
+	}
+
+	cfg := ws.Config()
+
+	targets := cfg.Targets
+	if len(targets) == 0 {
+		logger.Warn("No targets configured in complytime")
+		return fmt.Errorf("no targets in complytime config (add targets with policies)")
+	}
+
+	cacheMgr := cache.NewCache(o.cacheDir)
+	loader := policy.NewLoader(cacheMgr)
+	resolver := policy.NewResolver(loader)
+
+	entry, found := complytime.FindPolicy(cfg.Policies, o.policyID)
+	if !found {
+		return fmt.Errorf("policy %s not found in config", o.policyID)
+	}
+	ref := complytime.ParsePolicyRef(entry.URL)
+	eid := entry.EffectiveID()
+
+	version, err := loader.ResolveVersion(ref.Repository, ref.Version)
+	if err != nil {
+		return err
+	}
+	logger.Info("Resolved policy version", "policy", ref.Repository, "version", version)
+
+	graph, err := resolver.ResolvePolicyGraph(ref.Repository, version)
+	if err != nil {
+		return fmt.Errorf("failed to resolve policy graph: %w", err)
+	}
+
+	assessmentConfigs := policy.ExtractAssessmentConfigs(ref.Repository, graph)
+	groups := policy.GroupByEvaluator(assessmentConfigs, graph)
+
+	globalVars := cfg.Variables
+	if err := policy.ValidateGlobalVars(groups, globalVars, ws.Path()); err != nil {
+		return err
+	}
+
+	mgr, err := plugin.NewManager(o.pluginDir, logFile)
+	if err != nil {
+		return fmt.Errorf("plugin manager init failed: %w", err)
+	}
+	defer mgr.Cleanup()
+
+	if err := mgr.LoadPlugins(); err != nil {
+		return fmt.Errorf("plugin discovery failed: %w", err)
+	}
+
+	plugins := mgr.ListPlugins()
+	if len(plugins) == 0 {
+		return fmt.Errorf("no plugins found in %s (HealthCheck may have failed)", o.pluginDir)
+	}
+
+	// Freshness check: determine whether generation state needs updating.
+	// Generate is always called because the plugin process is ephemeral and
+	// needs RouteGenerate to initialize its config (file paths, profile, etc.)
+	// before Scan can run. Generate is idempotent — calling it when artifacts
+	// are fresh recreates the same output.
+	// See R37: specs/001-gemara-native-workflow/research.md
+	stateStale := false
+	cacheState, err := cache.LoadState(o.cacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to load cache state: %w", err)
+	}
+	policyState, _ := cacheState.GetPolicyState(ref.Repository)
+
+	genState, err := policy.LoadGenerationState(".", ref.Repository)
+	if err != nil {
+		return fmt.Errorf("failed to load generation state: %w", err)
+	}
+
+	switch {
+	case genState == nil:
+		logger.Info("No generation state found, generating", "policy", ref.Repository)
+		stateStale = true
+	case !genState.IsFresh(policyState.Digest):
+		logger.Warn("Policy cache updated since last generate — regenerating",
+			"policy", ref.Repository, "cached_digest", policyState.Digest, "gen_digest", genState.PolicyDigest)
+		stateStale = true
+	default:
+		logger.Info("Generation artifacts are fresh", "policy", ref.Repository)
+	}
+
+	var evaluatorIDs []string
+	for evalID := range groups {
+		evaluatorIDs = append(evaluatorIDs, evalID)
+	}
+
+	var policyTargets []complytime.TargetConfig
+	for _, t := range targets {
+		if slices.Contains(t.Policies, eid) {
+			policyTargets = append(policyTargets, t)
+		}
+	}
+
+	genSpin := terminal.NewSpinner("Generating policy artifacts...")
+	genSpin.Start()
+
+	for evalID, group := range groups {
+		for _, target := range policyTargets {
+			if err := mgr.RouteGenerate(ctx, evalID, globalVars, target.Variables, group.Configs); err != nil {
+				genSpin.Stop()
+				return err
+			}
+		}
+	}
+
+	genSpin.Stop()
+
+	if stateStale {
+		newGenState := policy.NewGenerationState(ref.Repository, policyState.Digest, evaluatorIDs)
+		if err := policy.SaveGenerationState(".", ref.Repository, newGenState); err != nil {
+			return fmt.Errorf("failed to save generation state: %w", err)
+		}
+	}
+
+	// --dry-run: persist GenerationState and output execution plan, then exit.
+	// "Dry" means "don't scan," not "don't generate."
+	// See FR-033: specs/001-gemara-native-workflow/spec.md
+	if o.dryRun {
+		var routes []output.EvaluatorRoute
+		for evalID, group := range groups {
+			route := output.EvaluatorRoute{
+				EvaluatorID:      evalID,
+				RequirementCount: len(group.Configs),
+				Status:           "healthy",
+			}
+			if lp, lookupErr := mgr.GetPlugin(evalID); lookupErr == nil {
+				route.PluginPath = lp.Info.ExecutablePath
+			} else {
+				route.Status = "ERROR"
+			}
+			routes = append(routes, route)
+		}
+
+		var scopes []output.TargetScope
+		for _, t := range targets {
+			if slices.Contains(t.Policies, eid) {
+				scopes = append(scopes, output.TargetScope{
+					TargetID:     t.ID,
+					PolicyID:     ref.Repository,
+					EvaluatorIDs: evaluatorIDs,
+				})
+			}
+		}
+
+		fmt.Print(output.FormatExecutionPlan(ref.Repository, routes, scopes))
+		return nil
+	}
+
+	// Pre-scan summary (FR-034)
+	var targetIDs []string
+	for _, t := range targets {
+		if slices.Contains(t.Policies, eid) {
+			targetIDs = append(targetIDs, t.ID)
+		}
+	}
+	fmt.Println(output.FormatPreScanSummary(len(assessmentConfigs), evaluatorIDs, targetIDs))
+
+	reqToControl := extractReqToControlMap(graph)
+	eval := output.NewEvaluator(ref.Repository, reqToControl)
+	outDir := filepath.Join(".", complytime.WorkspaceDir, complytime.ScanOutputDir)
+
+	scanSpin := terminal.NewSpinner("Scanning targets...")
+	scanSpin.Start()
+
+	var allAssessments []plugin.AssessmentLog
+
+	for _, target := range targets {
+		if !slices.Contains(target.Policies, eid) {
+			continue
+		}
+
+		pluginTargets := []plugin.Target{{
+			TargetID:  target.ID,
+			Variables: target.Variables,
+		}}
+
+		var assessments []plugin.AssessmentLog
+
+		for evalID := range groups {
+			results, routeErr := mgr.RouteScan(ctx, evalID, pluginTargets)
+			if routeErr != nil {
+				scanSpin.Stop()
+				return routeErr
+			}
+			assessments = append(assessments, results...)
+		}
+
+		if len(groups) == 0 {
+			results, routeErr := mgr.RouteScan(ctx, "", pluginTargets)
+			if routeErr != nil {
+				scanSpin.Stop()
+				return routeErr
+			}
+			assessments = append(assessments, results...)
+		}
+
+		eval.AddTarget(assessments)
+		allAssessments = append(allAssessments, assessments...)
+	}
+
+	scanSpin.Stop()
+
+	logPath, err := eval.Write(outDir)
+	if err != nil {
+		return fmt.Errorf("failed to write evaluation log: %w", err)
+	}
+	fmt.Printf("Evaluation log written: %s\n", logPath)
+
+	fmt.Println(output.FormatScanSummary(allAssessments))
+
+	gemaraLog := eval.GemaraLog()
+
+	switch o.format {
+	case complytime.OutputFormatPretty:
+		md := output.NewMarkdown(ref.Repository, gemaraLog)
+		md.SetEmbedEvaluationLog(logPath)
+		mdPath, err := md.Write(outDir)
+		if err != nil {
+			return fmt.Errorf("failed to write markdown report: %w", err)
+		}
+		fmt.Printf("Markdown report written: %s\n", mdPath)
+	case complytime.OutputFormatSARIF:
+		sarifPath, err := output.ToSARIF(gemaraLog, "file:///scan", outDir)
+		if err != nil {
+			return fmt.Errorf("failed to export SARIF: %w", err)
+		}
+		fmt.Printf("SARIF report written: %s\n", sarifPath)
+	case complytime.OutputFormatOSCAL:
+		oscalPath, err := output.ToOSCAL(gemaraLog, outDir)
+		if err != nil {
+			return fmt.Errorf("failed to export OSCAL: %w", err)
+		}
+		fmt.Printf("OSCAL report written: %s\n", oscalPath)
+	}
+
+	fmt.Println("\nScan completed.")
+	return nil
+}
+
+// extractReqToControlMap builds a requirement-ID → control-ID mapping
+// from the parsed control catalogs in the dependency graph.
+func extractReqToControlMap(graph *policy.DependencyGraph) map[string]string {
+	m := make(map[string]string)
+	for _, ctrl := range graph.Controls {
+		if ctrl.Parsed == nil {
+			continue
+		}
+		for _, c := range ctrl.Parsed.Controls {
+			for _, ar := range c.AssessmentRequirements {
+				m[ar.Id] = c.Id
+			}
+		}
+	}
+	return m
 }

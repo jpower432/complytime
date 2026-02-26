@@ -185,128 +185,76 @@ func TestEnsureDirectory(t *testing.T) {
 	}
 }
 
-// TestEnsureWorkspace tests the ensureWorkspace function with various cases.
+// TestEnsureWorkspace tests the ensureWorkspace function.
 func TestEnsureWorkspace(t *testing.T) {
 	tempDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tempDir))
+	t.Cleanup(func() { os.Chdir(originalDir) })
 
-	tests := []struct {
-		cfg         Config
-		expectError bool
-	}{
-		{
-			cfg: Config{
-				Files: struct {
-					Workspace  string "config:\"workspace\""
-					Datastream string "config:\"datastream\""
-					Results    string "config:\"results\""
-					ARF        string "config:\"arf\""
-					Policy     string "config:\"policy\""
-				}{
-					Workspace: filepath.Join(tempDir, "workspace"),
-					Policy:    "policy.yaml",
-					Results:   "results.xml",
-					ARF:       "arf.xml",
-				},
-			},
-			expectError: false,
-		},
-		{
-			cfg: Config{
-				Files: struct {
-					Workspace  string "config:\"workspace\""
-					Datastream string "config:\"datastream\""
-					Results    string "config:\"results\""
-					ARF        string "config:\"arf\""
-					Policy     string "config:\"policy\""
-				}{
-					Workspace: filepath.Join(tempDir, "invalid\000workspace"),
-					Policy:    "policy.yaml",
-					Results:   "results.xml",
-					ARF:       "arf.xml",
-				},
-			},
-			expectError: true,
-		},
-	}
+	directories, err := ensureWorkspace()
+	require.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.cfg.Files.Workspace, func(t *testing.T) {
-			directories, err := ensureWorkspace(&tt.cfg)
-			if (err != nil) != tt.expectError {
-				t.Errorf("Expected error: %v, got: %v", tt.expectError, err)
-			}
-
-			if !tt.expectError {
-				for _, dir := range directories {
-					if _, err := os.Stat(dir); os.IsNotExist(err) {
-						t.Errorf("Expected directory to be created: %s", dir)
-					}
-				}
-			}
-		})
+	for _, dir := range directories {
+		if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
+			t.Errorf("Expected directory to be created: %s", dir)
+		}
 	}
 }
 
-// TestDefineFilesPaths tests the defineFilesPaths function with various cases.
+// TestDefineFilesPaths tests the defineFilesPaths function.
 func TestDefineFilesPaths(t *testing.T) {
 	tempDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tempDir))
+	t.Cleanup(func() { os.Chdir(originalDir) })
 
-	tests := []struct {
-		cfg         Config
-		expectError bool
-	}{
-		{
-			cfg: Config{
-				Files: struct {
-					Workspace  string "config:\"workspace\""
-					Datastream string "config:\"datastream\""
-					Results    string "config:\"results\""
-					ARF        string "config:\"arf\""
-					Policy     string "config:\"policy\""
-				}{
-					Workspace:  filepath.Join(tempDir, "workspace"),
-					Datastream: filepath.Join(tempDir, "datastream.xml"),
-					Results:    "results.xml",
-					ARF:        "arf.xml",
-					Policy:     "policy.yaml",
-				},
-			},
-			expectError: false,
+	cfg := &Config{
+		Files: struct {
+			Datastream string `config:"datastream"`
+			Results    string
+			ARF        string
+			Policy     string
+		}{
+			Datastream: filepath.Join(tempDir, "datastream.xml"),
+			Results:    "results.xml",
+			ARF:        "arf.xml",
+			Policy:     "policy.yaml",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.cfg.Files.Workspace, func(t *testing.T) {
-			err := defineFilesPaths(&tt.cfg)
-			if (err != nil) != tt.expectError {
-				t.Errorf("Expected error: %v, got: %v", tt.expectError, err)
-			}
+	require.NoError(t, defineFilesPaths(cfg))
 
-			if !tt.expectError {
-				// Check if the paths are correctly set
-				expectedPolicyPath := filepath.Join(tempDir, "workspace", PluginDir, "policy", "policy.yaml")
-				expectedResultsPath := filepath.Join(tempDir, "workspace", PluginDir, "results", "results.xml")
-				expectedARFPath := filepath.Join(tempDir, "workspace", PluginDir, "results", "arf.xml")
+	wsDir := ".complytime"
+	expectedPolicyPath := filepath.Join(wsDir, PluginDir, "policy", "policy.yaml")
+	expectedResultsPath := filepath.Join(wsDir, PluginDir, "results", "results.xml")
+	expectedARFPath := filepath.Join(wsDir, PluginDir, "results", "arf.xml")
 
-				if tt.cfg.Files.Policy != expectedPolicyPath {
-					t.Errorf("Expected policy path: %s, got: %s", expectedPolicyPath, tt.cfg.Files.Policy)
-				}
-				if tt.cfg.Files.Results != expectedResultsPath {
-					t.Errorf("Expected results path: %s, got: %s", expectedResultsPath, tt.cfg.Files.Results)
-				}
-				if tt.cfg.Files.ARF != expectedARFPath {
-					t.Errorf("Expected ARF path: %s, got: %s", expectedARFPath, tt.cfg.Files.ARF)
-				}
-			}
-		})
+	if cfg.Files.Policy != expectedPolicyPath {
+		t.Errorf("Expected policy path: %s, got: %s", expectedPolicyPath, cfg.Files.Policy)
+	}
+	if cfg.Files.Results != expectedResultsPath {
+		t.Errorf("Expected results path: %s, got: %s", expectedResultsPath, cfg.Files.Results)
+	}
+	if cfg.Files.ARF != expectedARFPath {
+		t.Errorf("Expected ARF path: %s, got: %s", expectedARFPath, cfg.Files.ARF)
 	}
 }
 
 func TestConfig_LoadSettings(t *testing.T) {
 	tempDir := t.TempDir()
-	tempDataStream := filepath.Join(tempDir, "datastream.xml")
-	err := os.WriteFile(tempDataStream, []byte("example"), 0400)
+	originalDir, err := os.Getwd()
 	require.NoError(t, err)
+	require.NoError(t, os.Chdir(tempDir))
+	t.Cleanup(func() { os.Chdir(originalDir) })
+
+	tempDataStream := filepath.Join(tempDir, "datastream.xml")
+	err = os.WriteFile(tempDataStream, []byte("example"), 0400)
+	require.NoError(t, err)
+
+	wsDir := ".complytime"
 
 	tests := []struct {
 		name          string
@@ -317,26 +265,20 @@ func TestConfig_LoadSettings(t *testing.T) {
 		{
 			name: "Valid/AllSettingsSupplied",
 			inputSettings: map[string]string{
-				"workspace":  tempDir,
 				"datastream": tempDataStream,
-				"results":    "results.xml",
-				"arf":        "arf.xml",
-				"policy":     "policy.yaml",
 				"profile":    "test",
 			},
 			wantCfg: Config{
 				Files: struct {
-					Workspace  string "config:\"workspace\""
-					Datastream string "config:\"datastream\""
-					Results    string "config:\"results\""
-					ARF        string "config:\"arf\""
-					Policy     string "config:\"policy\""
+					Datastream string `config:"datastream"`
+					Results    string
+					ARF        string
+					Policy     string
 				}{
-					Workspace:  tempDir,
 					Datastream: tempDataStream,
-					Results:    filepath.Join(tempDir, "openscap", "results", "results.xml"),
-					ARF:        filepath.Join(tempDir, "openscap", "results", "arf.xml"),
-					Policy:     filepath.Join(tempDir, "openscap", "policy", "policy.yaml"),
+					Results:    filepath.Join(wsDir, "openscap", "results", DefaultResultsFile),
+					ARF:        filepath.Join(wsDir, "openscap", "results", DefaultARFFile),
+					Policy:     filepath.Join(wsDir, "openscap", "policy", DefaultPolicyFile),
 				},
 				Parameters: struct {
 					Profile string `config:"profile"`
@@ -347,11 +289,7 @@ func TestConfig_LoadSettings(t *testing.T) {
 		{
 			name: "Invalid/MissingSettings",
 			inputSettings: map[string]string{
-				"workspace":  tempDir,
 				"datastream": tempDataStream,
-				"results":    "results.xml",
-				"arf":        "arf.xml",
-				"policy":     "policy.yaml",
 			},
 			expectError: "missing configuration value for option \"profile\" (field: Profile)",
 		},

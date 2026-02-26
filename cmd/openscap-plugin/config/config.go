@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-hclog"
+
+	"github.com/complytime/complyctl/internal/complytime"
 )
 
 const (
@@ -25,15 +27,18 @@ const (
 	RemediationDir string = "remediations"
 	DatastreamsDir string = "/usr/share/xml/scap/ssg/content"
 	SystemInfoFile string = "/etc/os-release"
+
+	DefaultResultsFile string = "results.xml"
+	DefaultARFFile     string = "arf.xml"
+	DefaultPolicyFile  string = "tailoring.xml"
 )
 
 type Config struct {
 	Files struct {
-		Workspace  string `config:"workspace"`
 		Datastream string `config:"datastream"`
-		Results    string `config:"results"`
-		ARF        string `config:"arf"`
-		Policy     string `config:"policy"`
+		Results    string
+		ARF        string
+		Policy     string
 	}
 	Parameters struct {
 		Profile string `config:"profile"`
@@ -46,7 +51,8 @@ func NewConfig() *Config {
 }
 
 // LoadSettings sets the values in the Config from a given config map and
-// performs validation.
+// performs validation. File names for results, ARF, and policy use
+// convention-based defaults — these are plugin-internal concerns.
 func (c *Config) LoadSettings(config map[string]string) error {
 	filesVal := reflect.ValueOf(&c.Files).Elem()
 	if err := setConfigStruct(filesVal, config); err != nil {
@@ -56,25 +62,18 @@ func (c *Config) LoadSettings(config map[string]string) error {
 	if err := setConfigStruct(paramVal, config); err != nil {
 		return err
 	}
+	c.Files.Results = DefaultResultsFile
+	c.Files.ARF = DefaultARFFile
+	c.Files.Policy = DefaultPolicyFile
 	return c.validate()
 }
 
 func (c *Config) validate() error {
-	// String values to sanitize
-	inputValues := []*string{
-		&c.Files.Policy,
-		&c.Files.Results,
-		&c.Files.ARF,
-		&c.Parameters.Profile,
+	sanitized, err := SanitizeInput(c.Parameters.Profile)
+	if err != nil {
+		return err
 	}
-
-	for _, inputValue := range inputValues {
-		sanitized, err := SanitizeInput(*inputValue)
-		if err != nil {
-			return err
-		}
-		*inputValue = sanitized
-	}
+	c.Parameters.Profile = sanitized
 
 	cleanDsPath, err := SanitizePath(c.Files.Datastream)
 	if err != nil {
@@ -187,17 +186,8 @@ func ensureDirectory(path string) error {
 	return nil
 }
 
-func ensureWorkspace(cfg *Config) (map[string]string, error) {
-	workspacePath, err := SanitizePath(cfg.Files.Workspace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sanitize workspace path %s: %w", cfg.Files.Workspace, err)
-	}
-
-	workspace, err := validatePath(workspacePath, true)
-	if err != nil {
-		hclog.Default().Info("Informed workspace was not found. It will be created.")
-		workspace = workspacePath
-	}
+func ensureWorkspace() (map[string]string, error) {
+	workspace := complytime.WorkspaceDir
 
 	directories := map[string]string{
 		"workspace":      workspace,
@@ -217,7 +207,7 @@ func ensureWorkspace(cfg *Config) (map[string]string, error) {
 }
 
 func defineFilesPaths(cfg *Config) error {
-	directories, err := ensureWorkspace(cfg)
+	directories, err := ensureWorkspace()
 	if err != nil {
 		return err
 	}
@@ -229,13 +219,16 @@ func defineFilesPaths(cfg *Config) error {
 	return nil
 }
 
-// setConfigStruct populates struct fields with matching tags to values
-// in a given config map.
+// setConfigStruct populates struct fields tagged with `config:"key"` from
+// a given config map. Untagged fields are skipped (plugin defaults apply).
 func setConfigStruct(val reflect.Value, config map[string]string) error {
 	t := val.Type()
 	for i := 0; i < val.NumField(); i++ {
 		fieldType := t.Field(i)
 		key := fieldType.Tag.Get("config")
+		if key == "" {
+			continue
+		}
 		value, ok := config[key]
 		// if datastream is not set in manifest file, plugin will try to determine
 		// and validate the datastream path later based on system information.

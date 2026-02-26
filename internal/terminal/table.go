@@ -63,6 +63,25 @@ func WrapText(text string, lineWidth int) string {
 	return strings.TrimSpace(wrapped.String())
 }
 
+// AutoColumnWidths returns a copy of columns with widths set to the maximum
+// display width (header or cell) plus padding. Uses lipgloss.Width to
+// correctly measure multi-byte characters like emoji.
+func AutoColumnWidths(columns []table.Column, rows []table.Row, padding int) []table.Column {
+	out := make([]table.Column, len(columns))
+	for i, col := range columns {
+		maxW := lipgloss.Width(col.Title)
+		for _, row := range rows {
+			if i < len(row) {
+				if w := lipgloss.Width(row[i]); w > maxW {
+					maxW = w
+				}
+			}
+		}
+		out[i] = table.Column{Title: col.Title, Width: maxW + padding}
+	}
+	return out
+}
+
 // ShowPlainTable renders a plain text formatted table to writer.
 func ShowPlainTable(writer io.Writer, columns []table.Column, rows []table.Row) {
 	for _, col := range columns {
