@@ -36,21 +36,6 @@ func nonPassingSortPriority(r gemara.Result) int {
 	}
 }
 
-func resultToEmoji(r gemara.Result) string {
-	switch r {
-	case gemara.Passed:
-		return complytime.StatusPassed
-	case gemara.Failed:
-		return complytime.StatusFailed
-	case gemara.NotApplicable, gemara.NotRun:
-		return complytime.StatusSkipped
-	case gemara.Unknown:
-		return complytime.StatusError
-	default:
-		return complytime.StatusError
-	}
-}
-
 // matchingStepMessage returns the message from the first step whose result
 // matches the aggregated outcome. Falls back to the first step's message.
 // See R45: scanning provider authors control the failure text.
