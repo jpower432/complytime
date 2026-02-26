@@ -1,17 +1,28 @@
 <!--
 Sync Impact Report:
-Version: 1.0.0 → 1.0.1 (Clarifications and alignment with ComplyTime Organization Style Guide)
-Modified Principles: N/A (no changes to principle content)
-Added Sections: N/A
+Version: 1.0.2 → 1.1.0 (Agent-optimized wording, repo-agnostic refactor, RFC 2119 normalization)
+Modified Principles:
+  - III. Incremental Improvement: Reframed from human-motivational to agent-enforceable MUST rules
+  - IV. Code is Written for Humans First → IV. Readability First: Retitled and tightened intro
+  - V. Do Not Reinvent the Wheel: Replaced human workflow advice with declarative constraints
+  - I, II, VI, VII: Normalized bare imperatives to RFC 2119 (MUST/SHOULD/MAY)
+Added Sections:
+  - Lint Configuration Awareness (under Guidelines for All Programming Languages)
+  - Incrementing This Constitution (under Governance)
 Removed Sections: N/A
+Other Changes:
+  - Removed repository-specific references (complyctl, complyscribe, direct file links)
+  - Normalized all directives across Contribution Workflow, Coding Standards, and Governance to RFC 2119
+  - Tightened vague language ("sensible defaults", "one sitting", etc.)
+  - Added "code agents" to Governance applicability statement
 Templates requiring updates:
-  ✅ plan-template.md - Constitution Check section aligns with principles
+  ⚠ plan-template.md - Constitution Check gates should reflect retitled Principle IV (Readability First)
   ✅ spec-template.md - No changes needed (generic template)
   ✅ tasks-template.md - No changes needed (generic template)
   ✅ checklist-template.md - No changes needed (generic template)
 Follow-up TODOs:
-  - RATIFICATION_DATE: Unknown - marked as TODO
-  - Containers section: Referenced in style guide but content not provided - pending addition
+  - Containers section: Referenced in style guide but content not yet provided - pending addition
+  - plan-template.md: Verify Constitution Check references updated Principle IV title
 -->
 
 # ComplyTime Constitution
@@ -20,55 +31,55 @@ Follow-up TODOs:
 
 ### I. Single Source of Truth (Centralized Constants)
 
-Centralize values used in multiple places or that may change over time. Avoid magic strings (e.g., `"active"`, `"https://api..."`) and magic numbers (e.g., `86400`) inline within logic. Move these values into dedicated files (e.g., `internal/complytime/consts.go`, `settings.py`).
+Values used in multiple places or that may change over time MUST be centralized. Magic strings (e.g., `"active"`, `"https://api..."`) and magic numbers (e.g., `86400`) MUST NOT appear inline within logic. These values MUST be moved into dedicated files (e.g., `internal/consts/consts.go`, `settings.py`).
 
-**Rationale**: Prevents divergence—updating a timeout from 30s to 60s in one file ensures every part of the application updates automatically. Avoids "shotgun surgery"—you should never search and replace a value across 10 different files to make one logical change, reducing the risk of missing instances and introducing bugs.
+**Rationale**: Prevents divergence -- updating a timeout from 30s to 60s in one file ensures every part of the application updates automatically. Avoids "shotgun surgery" -- a single logical change MUST NOT require search-and-replace across multiple files, reducing the risk of missed instances and introduced bugs.
 
 ### II. Simplicity & Isolation
 
-Complexity is the enemy of security and maintenance. Keep functions small and focused (Single Responsibility Principle). It is easier to test and maintain a system composed of small, isolated parts than a monolithic script.
+Code MUST reduce complexity to improve security and maintainability. Functions MUST follow the Single Responsibility Principle -- small, focused, and independently testable. Prefer isolated, composable parts over monolithic and inflexible approaches.
 
 **Rationale**: Small, isolated components reduce cognitive load, improve testability, and minimize the blast radius of changes.
 
 ### III. Incremental Improvement
 
-We encourage contributors to improve code they interact with while ensuring individual contributions remain focused. If you identify areas for improvement (refactoring, formatting fixes, better naming) while working on a specific bug or feature, consider opening a separate Pull Request or Issue on GitHub for those changes.
+Improvements to existing code are welcome, but each contribution MUST remain focused on a single concern. Changes unrelated to the current task (refactoring, formatting fixes, better naming) MUST be proposed in a separate commit or Pull Request. Before including incidental improvements, assess their impact on other core principles and justify the scope expansion.
 
-**Rationale**: Keeping aesthetic changes separate from logic fixes ensures that PRs remain atomic and easier for maintainers to review.
+**Rationale**: Keeping aesthetic changes separate from logic fixes ensures that PRs remain atomic and easier to review.
 
-### IV. Code is Written for Humans First
+### IV. Readability First
 
-Code is read 10x more often than it is written. Optimizing for the reader (your future self or a teammate) is more important than optimizing for the writer's speed.
+Code is read far more often than it is written. All code MUST prioritize clarity for the reader over brevity or convenience for the writer.
 
 **Implementation**:
 - **Explicit Naming**: Variable and function names MUST clearly describe their intent (e.g., use `days_until_expiration` instead of `d`).
-- **Avoid "Clever" Code**: Avoid complex one-liners or obscure language features that require deep mental parsing. If the implementation is hard to explain, it is a bad implementation.
+- **Avoid "Clever" Code**: MUST NOT use complex one-liners or obscure language features that require deep mental parsing. If the implementation is hard to explain, it is a bad implementation.
 - **Self-Documenting**: The code structure itself MUST explain the logic. Comments MUST explain the *why* (business logic/intent), not the *what* (syntax).
 
 **Rationale**: Readable code reduces onboarding time, prevents bugs from misunderstanding, and enables faster debugging.
 
 ### V. Do Not Reinvent the Wheel
 
-Leverage existing solutions, but validate their quality and contribute back.
+Leverage existing solutions and validate their quality.
 
 **Implementation**:
-- **Research First**: Always research existing open-source libraries or cloud-native solutions before writing custom code.
-- **Vet Dependencies**: Evaluate the library's reliability: check its adoption rate, governance model, maintenance frequency (last commit date), and community health.
-- **Contribute Upstream**: If an existing library is close to what we need but missing a feature or bug fix, contribute to it. Prefer sending a Pull Request to the upstream repository over creating a local workaround or a hard fork.
+- **Prefer Established Libraries**: MUST NOT introduce custom implementations when a well-established, actively maintained library or cloud-native solution exists for the same purpose.
+- **Vet Dependencies**: New dependencies MUST be actively maintained (recent release activity) and have a clear governance model. SHOULD NOT adopt abandoned or single-maintainer projects for critical functionality.
+- **No Hard Forks**: MUST NOT create hard forks or permanent local workarounds for upstream libraries. If upstream changes are needed, they SHOULD be contributed back in a separate effort.
 
-**Rationale**: Using well-maintained libraries reduces our maintenance burden. Contributing back improves the ecosystem for everyone and reduces the technical debt of maintaining internal patches.
+**Rationale**: Using well-maintained libraries reduces maintenance burden. Contributing back improves the ecosystem and reduces the technical debt of maintaining internal patches.
 
 ### VI. Composability (The Unix Philosophy)
 
-Write programs that do one thing and do it well. Write programs to work together. Our tools (like `complyctl`) MUST be modular. Output from one tool MUST be easily consumable as input for another (e.g., standard JSON/YAML streams).
+Programs and functions MUST do one thing and do it well. Programs and functions MUST be designed to work together. All tools MUST be modular. Output from one tool MUST be easily consumable as input for another (e.g., standard JSON/YAML streams).
 
 **Rationale**: Modular tools enable composition, reuse, and integration with external systems. Standard formats ensure interoperability.
 
 ### VII. Convention Over Configuration
 
-Decrease the number of decisions a developer or user needs to make. Use sensible defaults. Users SHOULD only need to specify configuration for things that deviate from the standard norm.
+Decrease the number of decisions a developer or user needs to make. Provide defaults aligned with the most common use case. Users SHOULD only need to specify configuration when deviating from the established standard.
 
-**Rationale**: Reduces cognitive load, accelerates onboarding, and prevents configuration errors through sensible defaults.
+**Rationale**: Reduces cognitive load, accelerates onboarding, and prevents configuration errors through well-chosen defaults.
 
 ## Repository Structure & Standards
 
@@ -83,27 +94,27 @@ Every repository under the ComplyTime organization MUST contain the following st
 | `SECURITY.md` | Security policy. | Vulnerability reporting instructions |
 | `.github/` | GitHub configuration. | Issue templates, PR templates, workflows. |
 
-Content of all these files can link to org-wide files, and eventually incremented with repository specific content.
+These files MUST link to org-wide definitions whenever available and MAY be incremented with repository-specific content.
 
 ## Contribution Workflow
 
 ### Branching Strategy
 
 - **Main Branch**: `main` is the stable production branch.
-- **Feature Branches**: Create branches from `main` for all changes.
+- **Feature Branches**: All changes MUST be developed on branches created from `main`.
 
 ### Pull Requests (PRs)
 
-- **Atomic Changes**: PRs MUST be small enough to be reviewed in one sitting. Large, sprawling PRs MAY be requested to be split.
+- **Atomic Changes**: PRs MUST address a single concern and be small enough for focused review. Large, multi-concern PRs SHOULD be split into separate submissions.
 - **Review Requirement**: All PRs REQUIRE review from at least two Maintainers.
 - **CI/CD Gates**:
   - **Standard**: All PRs MUST generally pass automated checks (linting, testing, build) before merging.
-  - **Exceptions**: We recognize that checks MAY occasionally fail due to external issues outside our control or transient flakes that pass locally. In these rare instances, maintainers CAN discuss and agree on exceptions to merge specific PRs despite a red status.
+  - **Exceptions**: Checks MAY occasionally fail due to external issues or transient flakes. In these rare instances, maintainers MAY agree on exceptions to merge specific PRs despite a failing status.
 - **Pull Request Title Format**: `<type>: <description>` (e.g., `feat: implement oscal validation logic`)
 
 ### Commit Messages
 
-Follow the **Conventional Commits** [specification](https://www.conventionalcommits.org/).
+All commit messages MUST follow the **Conventional Commits** [specification](https://www.conventionalcommits.org/).
 
 ## Infrastructure Standards Centralization
 
@@ -113,19 +124,26 @@ We SHOULD centralize workflows, configurations, and templates as much as possibl
 
 ### Guidelines for All Programming Languages
 
-- **Empty Line at End of File**: Ensure that all files include an empty line at the end. This helps with version control diffs and adheres to POSIX standards.
-- **Pre-commit Hooks**: The pre-commit and pre-push hooks can be configured by installing [pre-commit](https://pre-commit.com/).
-- **Makefile**: Use Makefile to centralize code specific commands.
-- **Testing**: Write tests for your code. Use descriptive names for test functions and include edge cases.
-- **Line Length**: Limit lines to 99 characters unless in exceptional cases where it is reasonable to improve readability.
+- **Empty Line at End of File**: All files MUST end with a single empty line. This ensures clean version control diffs and adheres to POSIX standards.
+- **Pre-commit Hooks**: Repositories SHOULD configure pre-commit and pre-push hooks via [pre-commit](https://pre-commit.com/).
+- **Makefile**: Repositories MUST use a Makefile to centralize code-specific commands.
+- **Testing**: All code MUST have tests. Test functions MUST use descriptive names and include edge cases. Inputs from external sources MUST be tested. Each test scenario MUST include at least one positive and one negative test case to verify that errors and exceptions are properly handled.
+- **Line Length**: Lines MUST be limited to 99 characters unless exceeding the limit demonstrably improves readability.
+- **Lint**: Code MUST have zero lint issues according to the lint configuration defined in the repository. No trailing spaces.
+- **Lint Configuration Awareness**: Before making code changes, agents MUST read the repository's lint and formatter configuration files to understand the enforced rules. All generated or modified code MUST conform to these configurations. If no lint configuration is present, agents SHOULD follow the language-specific defaults defined in this constitution. The ComplyTime organization standardizes on the following configuration files:
+  - `.golangci.yml` -- Go linting rules
+  - `ruff.toml` or `pyproject.toml` `[tool.ruff]` -- Python linting rules
+  - `.mega-linter.yml` -- Multi-language linting in CI
+  - `.pre-commit-config.yaml` -- Pre-commit and pre-push hook definitions
+  - `.yamllint.yml` -- YAML linting rules
 
-### Go (e.g., `complyctl`)
+### Go
 
 #### General Guidelines
 
-- **File Naming**: Use lowercase letters and underscores for file names (e.g., `my_file.go`).
-- **Package Names**: Use short, concise, and lowercase names for packages. Avoid underscores and mixed caps.
-- **Error Handling**: Always check for errors and handle them appropriately. Return errors to the caller when necessary.
+- **File Naming**: File names MUST use lowercase letters and underscores (e.g., `my_file.go`).
+- **Package Names**: Package names MUST be short, concise, and lowercase. MUST NOT use underscores or mixed caps.
+- **Error Handling**: Errors MUST always be checked and handled appropriately. Errors SHOULD be returned to the caller when the current function cannot resolve them.
 
 #### Licensing and File Headers
 
@@ -139,13 +157,13 @@ Formatting SHOULD be aligned with native go format tools, [`goimports`](https://
 
 #### Additional Guidelines
 
-Other [Go checks](https://github.com/complytime/complyctl/blob/main/.golangci.yml) are present in CI/CD, and therefore it MAY be useful to also run them locally before submitting a PR.
+Repositories SHOULD define Go-specific lint rules (e.g., via `.golangci.yml`) and run them in CI/CD. These checks SHOULD also be run locally before submitting a PR.
 
-### Python (e.g., `complyscribe`)
+### Python
 
 #### General Guidelines
 
-- **Type Hinting**: Use Python type hints to improve readability and tooling support.
+- **Type Hinting**: All Python code MUST use type hints to improve readability and tooling support.
 
 #### Licensing and File Headers
 
@@ -155,10 +173,10 @@ Other [Go checks](https://github.com/complytime/complyctl/blob/main/.golangci.ym
 
 #### Code Formatting
 
-- **Style**: Uses `black` and `isort` for formatting.
-- **Lint**: Use `flake8` for linting.
-- **Static type check**: Use `mypy` as static type checker.
-- **Non-Python files**: Use [Megalinter](https://github.com/oxsecurity/megalinter) to lint in a CI task. See [megalinter.yaml](https://github.com/complytime/complyscribe/blob/main/.mega-linter.yml) for more information.
+- **Style**: Code MUST be formatted with `black` and `isort`.
+- **Lint**: Code MUST pass `ruff` linting.
+- **Static type check**: Code MUST pass `mypy` static type checking.
+- **Non-Python files**: SHOULD use [Megalinter](https://github.com/oxsecurity/megalinter) or equivalent to lint non-Python files in a CI task. Repository-specific configuration details belong in each repository's own constitution increment.
 
 ### Containers
 
@@ -166,7 +184,7 @@ Other [Go checks](https://github.com/complytime/complyctl/blob/main/.golangci.ym
 
 ## Governance
 
-This constitution supersedes all other practices and serves as the central source of truth for engineering standards, contribution workflows, and architectural principles for the ComplyTime organization. All contributors and maintainers are expected to adhere to these guidelines to ensure consistency, quality, and compliance.
+This constitution supersedes all other practices and serves as the central source of truth for engineering standards, contribution workflows, and architectural principles for the ComplyTime organization. All contributors, maintainers, and code agents MUST adhere to these guidelines to ensure consistency, quality, and compliance.
 
 ### Amendment Procedure
 
@@ -181,6 +199,16 @@ This constitution supersedes all other practices and serves as the central sourc
 
 - All PRs/reviews MUST verify compliance with this constitution.
 - Complexity MUST be justified when deviating from principles.
-- Use this constitution for runtime development guidance and decision-making.
+- This constitution MUST be used as the authoritative reference for runtime development guidance and decision-making.
 
-**Version**: 1.0.1 | **Ratified**: TODO(RATIFICATION_DATE): Original adoption date unknown | **Last Amended**: 2026-02-12
+### Incrementing This Constitution
+
+This constitution is the org-wide shared reference for all ComplyTime repositories. Individual repositories MUST NOT modify this file. Instead, each repository SHOULD create its own `.specify/memory/constitution.md` that:
+
+1. References this org-wide constitution as its base authority.
+2. Adds repository-specific standards (e.g., additional lint rules, architecture constraints, technology-specific conventions) that do not conflict with the principles defined here.
+3. MAY tighten org-wide SHOULD directives to MUST for that repository's context, but MUST NOT relax org-wide MUST directives.
+
+Repository-level constitutions are incremental -- they extend, not replace, this document. In case of conflict, this org-wide constitution takes precedence.
+
+**Version**: 1.1.0 | **Ratified**: 2026-02-25 | **Last Amended**: 2026-02-25
