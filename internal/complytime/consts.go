@@ -43,6 +43,11 @@ const DefaultCommandTimeout = 5 * time.Minute
 
 const PluginExecutablePrefix = "complyctl-provider-"
 
+// SystemProviderDir is the system-wide provider directory where
+// package managers (e.g., RPM) install provider binaries.
+// Discovery checks this path as a fallback after the user directory.
+const SystemProviderDir = "/usr/libexec/complytime/providers"
+
 // Gemara OCI layer media types for identifying layer content within multi-layer OCI manifests.
 const (
 	MediaTypeCatalog  = "application/vnd.gemara.catalog.v1+yaml"
