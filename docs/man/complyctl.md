@@ -1,10 +1,10 @@
 % COMPLYCTL(1) Complyctl Manual
 % Marcus Burghardt <maburgha@redhat.com>
-% April 2025
+% February 2026
 
 # NAME
 
-complyctl - Complyctl CLI perform compliance assessment activities using plugins for different underlying technologies.
+complyctl - Complyctl CLI performs compliance assessment activities using Gemara policies and evaluator plugins.
 
 # SYNOPSIS
 
@@ -12,14 +12,13 @@ complyctl - Complyctl CLI perform compliance assessment activities using plugins
 
 # DESCRIPTION
 
-Complyctl CLI leverages OSCAL to perform compliance assessment activities, using plugins for each stage of the lifecycle.
+Complyctl CLI leverages Gemara policies from OCI registries to perform compliance assessment activities, using evaluator plugins for each stage of the lifecycle.
 
-Complyctl can be extended to support desired policy engines (PVPs) by the use of plugins.
-The plugin acts as the integration between complyctl and the PVPs native interface.
-Each plugin is responsible for converting the policy content described in OSCAL into the input format expected by the PVP.
-In addition, the plugin converts the raw results provided by the PVP into the schema used by complyctl to generate OSCAL output.
+Complyctl can be extended to support desired policy engines (PVPs) by the use of plugins. The plugin acts as the integration between complyctl and the PVPs native interface. Each plugin is responsible for evaluating requirements from Gemara assessment plans and returning structured results.
 
 Plugins communicate with complyctl via gRPC and can be authored using any preferred language. The plugin acts as the gRPC server while the complyctl CLI acts as the client. When a complyctl command is run, it invokes the appropriate method served by the plugin.
+
+All commands operate on the **complytime.yaml** workspace configuration file in the current directory. In comply-pack environments, a **complypack.yaml** pack manifest coexists alongside the runtime config to declare bundled policies, providers, and system dependencies.
 
 See more about authoring plugins at https://github.com/complytime/complyctl/blob/main/docs/PLUGIN_GUIDE.md.
 
@@ -27,33 +26,25 @@ Review the `openscap-plugin` that is shipped with complyctl at https://github.co
 
 Also check the "SEE ALSO" section for plugin specific man pages.
 
-Complyctl is built on https://github.com/oscal-compass/compliance-to-policy-go which provides a flexible plugin framework for leveraging OSCAL with various PVPs.
-
 # COMMANDS
 
-**completion**
-Generate the autocompletion script for the specified shell.
+**init**
+Initialize a Gemara-native workspace configuration file (complytime.yaml) by prompting for registry URL, target IDs, and policy ID mappings. Automatically runs **get** after creation.
 
-**generate**
-Generate PVP policy from an assessment plan.
+**get**
+Fetch or update Gemara policies from an OCI registry to the local cache (~/.complytime/policies/). Performs incremental sync with atomic updates and version resolution.
 
-**help**
-Display help about any command.
+**generate --policy-id** *ID*
+Resolve the dependency graph for a cached Gemara policy and invoke evaluator plugins to generate policy artifacts. Uses go-gemara parsed types for control catalogs and guidance documents.
 
-**list**
-List information about supported frameworks and components.
+**scan --policy-id** *ID* [**--format** *FORMAT*]
+Execute compliance checks against a Gemara policy using gRPC evaluator plugins. Supported formats: **oscal** (OSCAL assessment-results JSON), **pretty** (Markdown report with embedded EvaluationLog), **sarif** (SARIF v2.1.0 JSON). Produces an EvaluationLog and formatted output.
 
-**info**
-Display information about a framework's controls and rules.
-
-**plan**
-Generate a new assessment plan for a given compliance framework ID.
-
-**scan**
-Scan environment with assessment plan.
+**list** [**--plain**] [**--policy-id** *ID*]
+List cached and remote Gemara policies from the workspace configuration. Remote-only policies are shown with a **(remote)** marker.
 
 **version**
-Print the version.
+Display the complyctl version, build date, and git commit.
 
 # OPTIONS
 
@@ -67,112 +58,38 @@ Run **complyctl [command] --help** for more information about a specific command
 
 # EXAMPLES
 
-## Leveraging the info command
+## Gemara-Native Workflow
 
-Use the `info` command functionality to explore information about controls, rules, and parameters within a framework.
-
-```bash
-$ complyctl info anssi_bp28_minimal
-# List the controls in the framework
-
-$ complyctl info anssi_bp28_minimal --control <control-id>
-# List details about a control and rules used by that control
-
-$ complyctl info anssi_bp28_minimal --rule <rule-id>
-# List the parameters used be a specific rule
-
-$ complyctl info anssi_bp28_minimal --parameter <parameter-id>
-# See the current set value and valid alternatives for a parameter
-```
-
-## Assessment Scoping using the plan command
-
-The `plan` command is used for scoping an OSCAL Assessment Plan. Default scope can be changed via a configuration file generated by the `--dry-run` option. The fields of the `config.yml` can be updated to scope controls, rules, and parameters.
+Initialize a workspace, fetch policies, run a scan, and view results:
 
 ```bash
-$ complyctl plan anssi_bp28_minimal --dry-run --out config.yml 
-# Populate framework-id defaults in config.yml
+$ complyctl init
+# Prompts for registry URL, targets, and policy IDs → creates complytime.yaml
 
-$ complyctl plan anssi_bp28_minimal --scope-config config.yml  
-# Configure plan based on updates made in config.yml
+$ complyctl get
+# Fetches policies from OCI registry to ~/.complytime/policies/
+
+$ complyctl generate --policy-id nist-800-53-r5
+# Resolves dependency graph and invokes evaluator plugins
+
+$ complyctl scan --policy-id nist-800-53-r5 --format oscal
+# Produces assessment-results-*.json in OSCAL format
+
+$ complyctl scan --policy-id nist-800-53-r5 --format pretty
+# Produces Markdown report with embedded EvaluationLog
+
+$ complyctl scan --policy-id nist-800-53-r5 --format sarif
+# Produces scan-*.sarif.json in SARIF v2.1.0 format
+
+$ complyctl list --plain
+# Lists cached and remote policies in plain table format
 ```
-
-## Configuring the Assessment Plan
-
-### Excluding Controls and Rules
-
-Excluding components of the assessment plan works the same way for both controls and rules. To exclude a control from the assessment plan, delete the entire group of YAML keys associated with that `controlId`. Activities associated with that `controlId` will be marked as "skipped" if there are no other controls in scope of the activity.
-
-All rules associated with a controlId are included by default and indicated by the "*" global wildcard. To exclude a rule specific to a controlId, use the `excludeRules` YAML key. To exclude a rule across all controls, use the `globalExcludeRules` YAML key. The `globalExcludeRules` YAML key takes priority over `includeRules` globally.
-
-### Selecting Parameter Values
-
-Parameters of the assessment-plan are grouped by remarks value. To configure the `selectParameters` field, update the second-level YAML key `value` with a valid alternative for the selected parameter. Selecting parameter values in the `selectParameters` field will allow you to update the initial set value for a parameter. If the update to the parameter value is not a valid parameter alternative, the `assessment-plan.json` will not be written and an error will be produced, listing the valid alternatives.
-
-Below is an example `config.yml`. The example excludes the controlId `r30` and uses the `excludeRules` YAML key to exclude `accounts_password_set_max_life_root`. The `globalExcludeRules` YAML key is used to exclude all rules for all controlIds in the `config.yml`. The controlId `r31` has a valid parameter update to `var_password_pam_ucredit` from "1" to "365."
-
-```yaml
-frameworkId: anssi_bp28_minimal
-includeControls:
-#- controlId: r30 # Delete all fields associated with r30
-#  controlTitle: Removal Of Unused User Accounts
-#  includeRules:
-#  - "*"
-#  selectParameters:
-#  - name: N/A
-#    value: N/A
-- controlId: r31
-  controlTitle: User Password Strength
-  includeRules:
-  - "*"
-  excludeRules: # Use to exclude a rule specific to the controlId
-  - "accounts_password_set_max_life_root"
-  waiveRules: # Use to waive a rule specific to the controlId
-  - "accounts_password_pam_minlen"
-  selectParameters:
-  - name: var_password_pam_ucredit # Initial value = "1"
-    value: "365" # Update parameter value to a valid alternative ("365")
-  - name: var_password_pam_unix_rounds
-    value: "11" # Initial value = "11"
-globalExcludeRules:
-- "*" # This will exclude all rules for all controlIds
-globalWaiveRules:
-- "*" # This will waive all rules for all controlIds
-```
-
-## Assessment Plan Scope Inheritance
-
-When excluding a `controlId` from the `config.yml`, all rules associated with the `controlId` will be skipped and not assessed in the assessment plan. If a rule is associated with multiple controls, they should be explicitly excluded for all related controls or via `globalExcludeRules`. Otherwise the rule will still be executed by the scanner if any control includes it.
-
-The activities of the assessment plan will be indicated as "skipped" for rules that are globally excluded. Therefore, all parameters associated with a globally excluded rule will not be used in the generated `assessment-plan.json`.
-
-When waiving a rule, the values of `includeRules` will first be checked to ensure the rule was not skipped. If the rule is not skipped, it will be marked as "waived" in the Assessment Plan. Waived rules are expected to fail due to any known exception related to the environment being scanned. Waiving rules with `waiveRules` has the same functionality of `globalWaiveRules`. All rules marked as "waived" will be propogated across `controlIds`.
-
-The output in `assessment-results.md` will reflect the `Waived Rules` within the `Failed Rules` section. In the case of a rule passing, it will be included in the `Passed Rules` section. 
-
-The activities of the assessment plan will be indicated as "waived" for rules that are globally waived. Therefore, all parameters associated with a globally waived rule will not be altered in the generated `assessment-plan.json`.
-
-After configuring the `assessment-plan.json` the activities of the assessment plan and their selected parameter values will be updated.
-
-## Generating Policy Artifacts from the Assessment Plan
-
-The complyctl `generate` command will generate the **plugin-specific** policy from the OSCAL Assessment Plan, more specifically it processes the validation component from the assessment-plan.json.
-
-## Scanning System Environment with the Assessment Plan and Policy Artifacts
-
-The `scan` command will scan the environment with the OSCAL Assessment Plan using the generated policy. Observations will be returned to complyctl to be carried out and produced as an assessment-results.json. 
-
-### Assessment Results
-
-Assessment Results will be generated in the `assessment-results.json` file and can be viewed as Markdown by passing the `--with-md` flag. 
 
 # SEE ALSO
 
 complyctl-openscap-plugin(7)
 
 See the Upstream project at https://github.com/complytime/complyctl for more detailed documentation.
-
-See https://github.com/oscal-compass/compliance-to-policy-go project.
 
 # COPYRIGHT
 

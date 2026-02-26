@@ -1,46 +1,210 @@
-# E2E & Integration Tests
+# E2E Testing
 
-This document provides an overview of the End-to-End (E2E) and integration tests for `complyctl`.
+## Automated
 
-## Overview
+```bash
+make test-e2e
+```
 
-The E2E (End-to-End) and integration tests are designed to verify that the `complyctl` commands function correctly
-in a real-world environment. The E2E tests, located in [e2e_test.go](../tests/e2e/e2e_test.go), are written in Go
-and utilize the testing package. These tests execute the complyctl binary and validate its output through assertions.
-The integration tests, on the other hand, are implemented within the GitHub workflow file
-[integration_test.yml](../.github/workflow/integration_test.yml).
+Builds `complyctl` + `complyctl-provider-test`, then runs all e2e tests with an in-process mock OCI registry. No external services required.
 
-## How to Run Tests
+Tests live in `tests/e2e/`. Build tag: `e2e`.
 
-The test is triggered whenever a PR is created or updated or merged to `main` branch. It begins by starting a Fedora container, then builds `complyctl`, downloads the test data for Fedora OSCAL content, sets up the plugin, and automatically runs the test cases.
-If you'd like to use different test data, you can update the input parameters in both [e2e_test.yml](https://github.com/complytime/complyctl/blob/main/.github/workflows/e2e_test.yml#L29) and [integration_test.yml](https://github.com/complytime/complyctl/blob/main/.github/workflows/integration_test.yml#L11)
+| Test | Validates |
+|:---|:---|
+| `FullWorkflow` | get → list → generate → scan (oscal, pretty, sarif) |
+| `PolicyCache` | OCI layout structure, state.json tracking |
+| `MultiplePolicies` | Multi-policy fetch + list |
+| `ScanDefaultFormat` | No --format = EvaluationLog only |
+| `InvalidFormat` | `--format pdf` rejected |
+| `MissingPolicy` | Uncached policy fails with clear message |
+| `MockRegistryOCICompliance` | v2 endpoint, catalog, tags, manifests, 404s |
+| `MockPluginHealthCheck` | Plugin discovery + HealthCheck + Generate RPC |
+| `Help` | CLI help output structure |
+| `Version` | Version command output |
+| `ListFilterByPolicyID` | `--policy-id` filter on list |
 
-## Test Cases
+## Manual Walkthrough
 
-The following is a list of the existing E2E test cases:
+Step-by-step validation using the mock OCI registry and test plugin.
 
-- **TestComplyctlHelp**: Tests the `complyctl --help` command and ensures that the help message is displayed correctly.
-- **TestComplyctlList**: Tests the `complyctl list` command and ensures that the list of frameworks is displayed correctly.
-- **TestComplyctlInfo**: Tests the `complyctl info` command with different arguments and ensures that the correct information is displayed.
-- **TestComplyctlPlan**: Tests the `complyctl plan` command with different arguments and ensures that the assessment plan is generated correctly.
-- **TestComplyctlGenerate**: Tests the `complyctl generate` command and ensures that the policy is generated correctly.
-- **TestComplyctlScan**: Tests the `complyctl scan` command and ensures that the scan is performed correctly and the results are generated.
-- **TestComplyctlCustomizePlanWorkflow**: Tests a complete workflow of customizing an assessment plan, generating a policy, and scanning the environment.
+### Prerequisites
 
-The following is a list of the existing integration test cases:
-- **Running whole workflow:** Run `list`, `plan`, `generate`, `scan` of `complyctl` twice with OSCAL fedora cusp contents, first with original OSCAL assessment-plan, second with customized OSCAL assessment-plan.
-- **Validate scan result:** For both original and customized runs, validate rule `xccdf_org.ssgproject.content_rule_file_permissions_etc_passwd` scan result. First it should `fail` (when permissions are 666), after setting permissions to 644, it should `pass`.
-- **Validate original assessment-plan** via [go-oscal](https://github.com/defenseunicorns/go-oscal)
-- **Validate customized assessment-plan** via [go-oscal](https://github.com/defenseunicorns/go-oscal)
+```bash
+make build build-test-plugin
+```
 
-## How to Add New Test Cases
+### Step 1: Start mock OCI registry
 
-To add a new E2E test case, you can follow these steps:
+```bash
+make mock-registry
+```
 
-1. Open the `tests/e2e/e2e_test.go` file.
-2. Create a new function with the `Test` prefix (e.g., `TestMyNewCommand`).
-3. Use the `os/exec` package to run the `complyctl` command with the desired arguments.
-4. Use the `assert` and `require` packages from `testify` to assert the output of the command.
-5. Run the tests to ensure that your new test case passes.
+Listens on `http://localhost:8765`. Pre-seeded policies:
 
-To add new test steps for integration test, directly edit the [integration_test.yml](../.github/workflow/integration_test.yml)
+| Policy ID | Layers | Tags |
+|:---|:---|:---|
+| `policies/nist-800-53-r5` | catalog + policy | v1.0.0, latest |
+| `policies/cis-benchmark` | catalog | v2.0.0, latest |
+| `catalogs/osps-b` | catalog | v1.0.0, latest |
+| `guidance/nist` | guidance | v1.0.0, latest |
+
+Verify it responds:
+
+```bash
+curl -s http://localhost:8765/v2/ | jq .
+curl -s http://localhost:8765/v2/_catalog | jq .
+```
+
+### Step 2: Install test plugin
+
+```bash
+mkdir -p ~/.complytime/providers
+cp bin/complyctl-provider-test ~/.complytime/providers/
+```
+
+The test plugin responds to all RPCs (HealthCheck, Generate, Scan) with predefined pass results. Evaluator ID: `test`.
+
+### Step 3: Create workspace config
+
+This walkthrough uses standalone mode (`complytime.yaml` only). For comply-pack workflows where a `complypack.yaml` coexists with the runtime config, see [COMPLY_PACK_QUICKSTART.md](COMPLY_PACK_QUICKSTART.md).
+
+```bash
+cat > complytime.yaml << 'EOF'
+registry:
+  url: http://localhost:8765
+policies:
+  - id: policies/nist-800-53-r5
+targets:
+  - id: local
+    policy_ids:
+      - policies/nist-800-53-r5
+    variables:
+      env: manual-test
+EOF
+```
+
+### Step 4: Fetch policies
+
+```bash
+bin/complyctl get
+```
+
+**Verify:**
+
+```bash
+# Cache directory created
+ls ~/.complytime/policies/policies/nist-800-53-r5/
+
+# State file tracks policy
+cat ~/.complytime/state.json | jq .
+```
+
+Expected: `oci-layout` file exists, state.json contains policy digest and version.
+
+### Step 5: List cached policies
+
+```bash
+bin/complyctl list --plain
+```
+
+Expected: `policies/nist-800-53-r5` appears with cached version.
+
+### Step 6: Generate policy graph
+
+```bash
+bin/complyctl generate --policy-id policies/nist-800-53-r5
+```
+
+Expected: `Gemara policy generation completed` log line. Plugin receives Generate RPC with assessment configurations extracted from the policy layer.
+
+### Step 7: Scan — EvaluationLog only (default)
+
+```bash
+bin/complyctl scan --policy-id policies/nist-800-53-r5
+```
+
+**Verify:**
+
+```bash
+ls .complytime/scan/
+cat .complytime/scan/evaluation-log-*.json | jq .
+```
+
+Expected: Single `evaluation-log-*.json` file. No OSCAL, SARIF, or Markdown files.
+
+### Step 8: Scan — OSCAL format
+
+```bash
+rm -rf .complytime/scan
+bin/complyctl scan --policy-id policies/nist-800-53-r5 --format oscal
+```
+
+**Verify:**
+
+```bash
+cat .complytime/scan/assessment-results-*.json | jq '.["assessment-results"].metadata'
+```
+
+Expected: `oscal-version: "1.2.0"`, results array with findings.
+
+### Step 9: Scan — Markdown format
+
+```bash
+rm -rf .complytime/scan
+bin/complyctl scan --policy-id policies/nist-800-53-r5 --format pretty
+```
+
+**Verify:**
+
+```bash
+cat .complytime/scan/report-*.md
+```
+
+Expected: Markdown with `# Compliance Scan Report` header, target sections, step results.
+
+### Step 10: Scan — SARIF format
+
+```bash
+rm -rf .complytime/scan
+bin/complyctl scan --policy-id policies/nist-800-53-r5 --format sarif
+```
+
+**Verify:**
+
+```bash
+cat .complytime/scan/scan-*.sarif.json | jq '.version'
+```
+
+Expected: SARIF version `"2.1.0"`.
+
+### Step 11: Negative tests
+
+```bash
+# Invalid format
+bin/complyctl scan --policy-id policies/nist-800-53-r5 --format pdf
+# Expected: error containing "invalid format"
+
+# Missing policy (without running get)
+rm -rf ~/.complytime/policies
+bin/complyctl scan --policy-id nonexistent
+# Expected: error containing "not in cache"
+```
+
+### Cleanup
+
+```bash
+rm -rf .complytime/scan complytime.yaml
+rm -rf ~/.complytime/policies ~/.complytime/state.json
+rm ~/.complytime/providers/complyctl-provider-test
+# Kill mock registry (Ctrl+C in its terminal)
+```
+
+## Adding New Tests
+
+1. Open `tests/e2e/e2e_test.go`.
+2. Add a `TestE2E_*` function using the shared helpers from `helpers_test.go`.
+3. Use `startMockRegistry(t)` for an isolated in-process registry per test.
+4. Use `installTestPlugin(t, homeDir)` to deploy the test plugin.
+5. Use `runComplytime(t, binary, workDir, env, args...)` to execute commands.
+6. Run: `make test-e2e`
