@@ -1,6 +1,6 @@
 module github.com/complytime/complyctl/cmd/openscap-plugin
 
-go 1.24.9
+go 1.24.12
 
 replace github.com/complytime/complyctl => ../..
 
