@@ -1,6 +1,6 @@
 # Implementation Plan: Gemara-Native Decoupled Workflow
 
-**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-26e) | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-27) | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/001-gemara-native-workflow/spec.md`
 
 ## Summary
@@ -41,8 +41,8 @@ flowchart TD
         Assessment["policy/assessment.go<br/>ExtractAssessmentConfigs<br/>GroupByEvaluator"]
     end
 
-    subgraph ScanningInterface["Scanning Interface (~/.complytime/providers/)"]
-        Discovery["plugin/discovery.go<br/>complyctl-provider-* → evaluator ID"]
+    subgraph ScanningInterface["Scanning Interface (~/.complytime/providers/ + /usr/libexec/complytime/providers/)"]
+        Discovery["plugin/discovery.go<br/>complyctl-provider-* → evaluator ID<br/>(user dir precedence, FR-029)"]
         Manager["plugin/manager.go<br/>RouteGenerate / RouteScan"]
         ProviderBin["complyctl-provider-openscap<br/>(gRPC subprocess)"]
     end
@@ -208,6 +208,11 @@ flowchart TD
 - **`scan --dry-run` removed**: `generate` is the only execution plan preview. `scan` auto-generates when needed but shows only the one-line pre-scan summary (FR-034). `--dry-run` was redundant once `generate` existed as a separate command. FR-033 removed.
 - **Code removals**: `RenderTable()`, `RenderTableString()`, `RenderReport()`, `RenderReportString()` removed from `internal/terminal/table.go`. `lipgloss`, `lipgloss/table`, `charmbracelet/x/term` imports removed from `table.go`. `--dry-run` flag removed from `scan.go`. `borderColor`, `headerStyle`, `cellStyle`, `borderStyle`, `sectionLabel` style variables removed.
 
+**Session 2026-02-27 Changes (Clarifications — Cache/Provider Directory Conventions)**:
+- **Cache directory confirmed**: `~/.complytime/` (dot-prefixed, single directory in HOME). Go/Podman pattern. All global state — policies, providers, state.json — under one predictable location. No XDG splitting. Current implementation confirmed correct.
+- **Dual-directory provider discovery**: FR-029 updated. User directory (`~/.complytime/providers/`) checked first, then system directory (`/usr/libexec/complytime/providers/`) as fallback. User-installed providers take precedence over system-installed providers with the same evaluator ID. Matches FHS conventions for RPM-installed executables.
+- **Workspace collision documented**: Workspace root MUST NOT be `$HOME`. Workspace-local `.complytime/` and global `~/.complytime/` share the same directory name — collision is a degenerate case. Documented as unsupported (same as `git init` in `$HOME`).
+
 **Scale/Scope**: 5 targets, 3 policy IDs typical. 50 controls, 20 assessments per policy.
 
 ## Constitution Check
@@ -222,7 +227,7 @@ flowchart TD
 | IV. Code for Humans | **PASS** | Explicit naming (`ExtractAssessmentConfigs`, `GroupByEvaluator`). Three-tier variable model is self-documenting: global/target/test. |
 | V. Do Not Reinvent the Wheel | **PASS** | Auth delegates to `oras-credentials-go`. Cache delegates to `oras-go/v2/content/oci`. Result aggregation delegates to go-gemara (R45). Spinner delegates to `charmbracelet/bubbles/spinner`. Plain table uses `fmt.Fprintf` (Session 2026-02-26e; `lipgloss/table` removed). |
 | VI. Composability | **PASS** | CLI commands compose: `init` (config only) → `get` → `doctor` → `generate` (optional) → `scan`. Each command works standalone. Pack builder deferred to separate tool (Session 2026-02-25d). |
-| VII. Convention Over Configuration | **PASS** | `complytime.yaml` is a static convention like `go.mod` — no `--config` flags. PolicyEntry: url is self-contained OCI reference, id auto-derives from URL path if omitted (Session 2026-02-25d). Defaults: `~/.complytime/providers/`, `~/.complytime/`. Provider discovery by naming convention. |
+| VII. Convention Over Configuration | **PASS** | `complytime.yaml` is a static convention like `go.mod` — no `--config` flags. PolicyEntry: url is self-contained OCI reference, id auto-derives from URL path if omitted (Session 2026-02-25d). Defaults: `~/.complytime/providers/` + `/usr/libexec/complytime/providers/` (dual-directory, Session 2026-02-27), `~/.complytime/` for cache. Provider discovery by naming convention. |
 
 **Post-design re-check (2026-02-23e)**: All gates pass. R47-R49 strengthen Constitution II (targets-only Scan RPC removes a proto field and eliminates the requirement_ids drift vector — simpler contract, fewer failure modes), I (three-tier variable model: each variable type has a single canonical location — global at workspace top-level, target under `targets[].variables`, test from policy resolution — no ambiguity about where config lives), IV (variable tiers are named by their domain role — "global", "target", "test" — not by implementation detail like "evaluator_config"), VII (admins configure what they own: global workspace settings + per-target runtime config; test parameters come from the policy itself — no evaluator-specific configuration sections to understand). R50 strengthens VI (init composes doctor + get into a single setup command while each remains independently usable), VII (static `complytime.yaml` convention eliminates `--config` flag — zero decisions), and II (validation logic centralized in doctor — init has no validation of its own).
 
@@ -294,6 +299,12 @@ flowchart TD
 - **VI (Composability)**: Plain-only discovery output is always pipeable. Formatted reports in CWD are immediately accessible to downstream tools. EvaluationLog in hidden dir stays out of the way.
 - **VII (Convention Over Configuration)**: CWD for `--format` output matches standard CLI behavior — output where the user is working. No `--output-dir` flag needed. Zero decisions for the common case.
 - **IV (Readability First)**: EvaluationLog path always printed — users don't need to remember or look up where diagnostics go.
+
+**Post-design re-check (2026-02-27 — Cache/provider directory conventions)**: All gates pass. Session 2026-02-27 strengthens:
+- **I (Single Source of Truth)**: `~/.complytime/` is the single global state root — policies, providers, state.json. No XDG split. `stateSubdir` constant in `consts.go` is the sole definition.
+- **II (Simplicity & Isolation)**: One dot-directory for all global state reduces discovery complexity. Dual-directory provider search (user → system) with clear precedence eliminates ambiguity.
+- **VII (Convention Over Configuration)**: `~/.complytime/` follows Go/Podman single-directory pattern — zero env vars to set for the default case. `/usr/libexec/complytime/providers/` follows FHS convention for RPM-installed executables. User directory wins on collision — admins override system packages by dropping binaries in `~/.complytime/providers/`.
+- **VI (Composability)**: RPM packages install providers to system dir. User-local installs go to user dir. Both coexist. `complyctl providers` shows the resolved set.
 
 ## Project Structure
 

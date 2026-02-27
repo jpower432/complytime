@@ -264,7 +264,7 @@ Only non-passing results appear in the table. Passed results appear in the total
 
 ## Scanning Provider Development
 
-Scanning providers are standalone executables discovered from `~/.complytime/providers/`. No manifest files, no configuration files — just a binary.
+Scanning providers are standalone executables discovered from two directories (Session 2026-02-27): user directory (`~/.complytime/providers/`) checked first, then system directory (`/usr/libexec/complytime/providers/`) as fallback. User-installed providers take precedence. No manifest files, no configuration files — just a binary.
 
 **Requirements:**
 1. Executable name matches `complyctl-provider-*` (evaluator ID = name minus prefix)
@@ -352,14 +352,14 @@ make test-e2e
 make build-test-plugin
 cp ./bin/complyctl-provider-test ~/.complytime/providers/
 
-# Manual validation — see docs/E2E_INTEGRATION.md
+# Manual validation — see tests/e2e/README.md
 ```
 
 ## Comply-Pack Workflow (deferred to 002-comply-packs)
 
 All pack CLI commands (`pack init`, `pack build`, `pack push`, `pack pull`, `pack doctor`) are deferred to the `002-comply-packs` feature branch. Pack manifest types (`PackManifest`, etc.) exist in `internal/complytime/pack.go` as a data model for 002. The pack builder is a separate tool from `complyctl` runtime (Session 2026-02-25d).
 
-See `docs/COMPLY_PACK_QUICKSTART.md` for the pack design document.
+Pack design documentation will be produced in the `002-comply-packs` feature branch.
 
 ## CLI Commands
 

@@ -1,6 +1,6 @@
 # Data Model: Gemara-Native Decoupled Workflow
 
-**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-26d)
+**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-27)
 
 ## Entities
 
@@ -212,7 +212,7 @@ Discovered gRPC scanning provider with lifecycle management. No sidecar manifest
 | `client` | `PluginClient` | gRPC client interface |
 
 **Source**: `internal/plugin/manager.go`, `internal/plugin/client.go`
-**Discovery**: Executable files matching `complyctl-provider-*` in `~/.complytime/providers/`
+**Discovery (FR-029, Session 2026-02-27)**: Executable files matching `complyctl-provider-*` in two directories. User directory (`~/.complytime/providers/`) checked first, then system directory (`/usr/libexec/complytime/providers/`) as fallback. User-installed providers take precedence over system-installed providers with the same evaluator ID. System directory follows FHS convention for RPM-installed executables.
 **Note**: ~~PluginManifest~~ removed (Session 2026-02-14c, R19). No YAML sidecar files. No checksum verification (R20). User-facing: "scanning provider"; code-level: `plugin` package (R46).
 
 ---
@@ -375,7 +375,7 @@ PolicyEntry ──(get, per-registry client)──→ PolicyCache
                                                             └── AssessmentConfiguration (test variables from policy, R48)
                                                                    └── N:1 ScanningProvider (via per-plan evaluator_id, R32)
 
-complyctl providers ──→ ScanningProvider[] (discovery from ~/.complytime/providers/)
+complyctl providers ──→ ScanningProvider[] (discovery from ~/.complytime/providers/ + /usr/libexec/complytime/providers/, user precedence)
 complyctl doctor ──→ DoctorResult (config + target-policy cross-refs + providers
                      + per-policy version comparison: cached vs remote latest (R55)
                      + per-provider config summary: resolved/missing counts (R55)
