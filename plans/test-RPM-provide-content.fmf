@@ -1,0 +1,6 @@
+summary: Validate complyctl RPM binary is functional
+
+execute:
+    script:
+      - complyctl version
+      - complyctl --help
