@@ -175,7 +175,7 @@ assert_file_exists "get: state.json exists" \
 
 echo ""
 echo "=== list ==="
-OUT="$(run_complyctl list --plain)"
+OUT="$(run_complyctl list)"
 echo "${OUT}"
 assert_contains "list: shows policy" "${OUT}" "nist-800-53-r5"
 
@@ -190,17 +190,17 @@ echo "=== scan --format oscal ==="
 rm -rf "${WORK_DIR}/.complytime/scan"
 OUT="$(run_complyctl scan --policy-id "${POLICY_ID}" --format oscal)"
 echo "${OUT}"
-assert_contains "scan oscal: completed" "${OUT}" "Scan completed."
+assert_contains "scan oscal: completed" "${OUT}" "requirements:"
 
 assert_file_exists "scan oscal: evaluation-log exists" \
-    "${WORK_DIR}/.complytime/scan/evaluation-log-*.yaml"
+    "${WORK_DIR}/.complytime/scan/evaluation-log-*.yaml" >/dev/null
 
 OSCAL_FILE="$(assert_file_exists "scan oscal: assessment-results exists" \
-    "${WORK_DIR}/.complytime/scan/assessment-results-*.json")"
+    "${WORK_DIR}/assessment-results-*.json")"
 
 if [[ -n "${OSCAL_FILE}" ]]; then
-    assert_json_eq "scan oscal: oscal-version is 1.2.0" \
-        "${OSCAL_FILE}" '.["assessment-results"].metadata["oscal-version"]' "1.2.0"
+    assert_json_eq "scan oscal: oscal-version is 1.1.3" \
+        "${OSCAL_FILE}" '.["assessment-results"].metadata["oscal-version"]' "1.1.3"
     assert_json_gte "scan oscal: at least 1 result entry" \
         "${OSCAL_FILE}" '.["assessment-results"].results | length' 1
 fi
@@ -210,10 +210,10 @@ echo "=== scan --format pretty ==="
 rm -rf "${WORK_DIR}/.complytime/scan"
 OUT="$(run_complyctl scan --policy-id "${POLICY_ID}" --format pretty)"
 echo "${OUT}"
-assert_contains "scan pretty: completed" "${OUT}" "Scan completed."
+assert_contains "scan pretty: completed" "${OUT}" "requirements:"
 
 MD_FILE="$(assert_file_exists "scan pretty: markdown report exists" \
-    "${WORK_DIR}/.complytime/scan/report-*.md")"
+    "${WORK_DIR}/report-*.md")"
 
 if [[ -n "${MD_FILE}" ]]; then
     MD_CONTENT="$(cat "${MD_FILE}")"
@@ -225,10 +225,10 @@ echo "=== scan --format sarif ==="
 rm -rf "${WORK_DIR}/.complytime/scan"
 OUT="$(run_complyctl scan --policy-id "${POLICY_ID}" --format sarif)"
 echo "${OUT}"
-assert_contains "scan sarif: completed" "${OUT}" "Scan completed."
+assert_contains "scan sarif: completed" "${OUT}" "requirements:"
 
 SARIF_FILE="$(assert_file_exists "scan sarif: sarif file exists" \
-    "${WORK_DIR}/.complytime/scan/scan-*.sarif.json")"
+    "${WORK_DIR}/scan-*.sarif.json")"
 
 if [[ -n "${SARIF_FILE}" ]]; then
     assert_json_eq "scan sarif: version is 2.1.0" \
@@ -238,15 +238,16 @@ fi
 echo ""
 echo "=== scan (default, no --format) ==="
 rm -rf "${WORK_DIR}/.complytime/scan"
+rm -f "${WORK_DIR}"/assessment-results-* "${WORK_DIR}"/report-* "${WORK_DIR}"/scan-*
 OUT="$(run_complyctl scan --policy-id "${POLICY_ID}")"
 echo "${OUT}"
-assert_contains "scan default: completed" "${OUT}" "Scan completed."
+assert_contains "scan default: completed" "${OUT}" "requirements:"
 assert_file_exists "scan default: evaluation-log exists" \
     "${WORK_DIR}/.complytime/scan/evaluation-log-*.yaml" >/dev/null
 
-NO_OSCAL=$(ls "${WORK_DIR}/.complytime/scan/assessment-results-"* 2>/dev/null || true)
-NO_MD=$(ls "${WORK_DIR}/.complytime/scan/report-"* 2>/dev/null || true)
-NO_SARIF=$(ls "${WORK_DIR}/.complytime/scan/scan-"* 2>/dev/null || true)
+NO_OSCAL=$(ls "${WORK_DIR}/assessment-results-"* 2>/dev/null || true)
+NO_MD=$(ls "${WORK_DIR}/report-"* 2>/dev/null || true)
+NO_SARIF=$(ls "${WORK_DIR}/scan-"* 2>/dev/null || true)
 if [[ -z "${NO_OSCAL}" && -z "${NO_MD}" && -z "${NO_SARIF}" ]]; then
     pass "scan default: no formatted output without --format"
 else

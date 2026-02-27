@@ -19,9 +19,14 @@ MAN_OPENSCAP_CONF_OUTPUT = docs/man/c2p-openscap-manifest.5
 
 ##@ Proto
 
-proto: ## generate protobuf code (requires buf or protoc)
+proto: ## generate protobuf code (requires buf)
 	@command -v buf >/dev/null 2>&1 && buf generate || \
 		echo "Install buf: https://buf.build/docs/installation"
+
+lint-proto: ## lint protobuf files with buf
+	@command -v buf >/dev/null 2>&1 && buf lint || \
+		echo "Install buf: https://buf.build/docs/installation"
+.PHONY: lint-proto
 
 ##@ Mock Servers (for testing)
 

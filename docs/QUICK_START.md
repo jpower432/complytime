@@ -23,7 +23,7 @@ See the [Plugin Guide](PLUGIN_GUIDE.md) for authoring details.
 
 ## Step 3: Create workspace config
 
-Create `complytime.yaml` in your working directory. This is the runtime configuration — it declares targets, variables, and policy selections. In comply-pack environments, a separate `complypack.yaml` declares bundled policies and providers (see [COMPLY_PACK_QUICKSTART.md](COMPLY_PACK_QUICKSTART.md)).
+Create `complytime.yaml` in your working directory. This is the runtime configuration — it declares targets, variables, and policy selections.
 
 ```yaml
 version: 1
@@ -36,8 +36,6 @@ targets:
       - nist
     variables:
       api_token: ${MY_API_TOKEN}
-variables:
-  workspace: ./.complytime/scan
 ```
 
 Or use interactive setup:

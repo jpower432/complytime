@@ -12,10 +12,10 @@ import (
 	"github.com/complytime/complyctl/pkg/plugin"
 )
 
-func TestMockClient_HealthCheck(t *testing.T) {
+func TestMockClient_Describe(t *testing.T) {
 	mock := newMockClient()
 
-	resp, err := mock.HealthCheck(context.Background(), &plugin.HealthCheckRequest{})
+	resp, err := mock.Describe(context.Background(), &plugin.DescribeRequest{})
 	require.NoError(t, err)
 	assert.True(t, resp.Healthy)
 	assert.Equal(t, "mock-v1", resp.Version)

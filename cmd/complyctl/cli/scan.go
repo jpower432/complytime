@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -39,8 +40,9 @@ func scanCmd(common *Common) *cobra.Command {
   complyctl scan --policy-id nist-800-53-r5 --format pretty
   complyctl scan --policy-id nist-800-53-r5 --format oscal
   complyctl scan --policy-id nist-800-53-r5 --format sarif`,
-		SilenceUsage: true,
-		Args:         cobra.NoArgs,
+		SilenceUsage:      true,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := o.validate(); err != nil {
 				return err
@@ -51,11 +53,21 @@ func scanCmd(common *Common) *cobra.Command {
 			return o.run(cmd.Context())
 		},
 	}
-	cmd.Flags().StringVarP(&o.policyID, "policy-id", "p", "", "Policy ID to scan (required)")
+	cmd.Flags().StringVarP(&o.policyID, "policy-id", "p", "", "Policy ID to scan (see complyctl list)")
 	cmd.Flags().StringVarP(&o.format, "format", "f", "", "Output format: oscal, pretty, sarif")
 	cmd.Flags().DurationVarP(&o.timeout, "timeout", "t", complytime.DefaultCommandTimeout, "Maximum time for the scan operation (e.g. 5m, 10m, 1h)")
 	if err := cmd.MarkFlagRequired("policy-id"); err != nil {
 		logger.Error("Failed to mark policy-id as required", "error", err)
+	}
+	if err := cmd.RegisterFlagCompletionFunc("format", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return []string{complytime.OutputFormatOSCAL, complytime.OutputFormatPretty, complytime.OutputFormatSARIF}, cobra.ShellCompDirectiveNoFileComp
+	}); err != nil {
+		logger.Error("Failed to register format completion", "error", err)
+	}
+	if err := cmd.RegisterFlagCompletionFunc("policy-id", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}); err != nil {
+		logger.Error("Failed to register policy-id completion", "error", err)
 	}
 	return cmd
 }
@@ -91,15 +103,14 @@ func (o *scanOptions) run(ctx context.Context) error {
 
 	ws := complytime.NewWorkspace()
 	if err := ws.LoadAndValidate(); err != nil {
-		return fmt.Errorf("failed to load complytime: %w", err)
+		return fmt.Errorf("failed to load workspace config: %w", err)
 	}
 
 	cfg := ws.Config()
 
 	targets := cfg.Targets
 	if len(targets) == 0 {
-		logger.Warn("No targets configured in complytime")
-		return fmt.Errorf("no targets in complytime config (add targets with policies)")
+		return fmt.Errorf("no targets in complytime.yaml (add targets with policies)")
 	}
 
 	cacheMgr := cache.NewCache(o.cacheDir)
@@ -108,7 +119,7 @@ func (o *scanOptions) run(ctx context.Context) error {
 
 	entry, found := complytime.FindPolicy(cfg.Policies, o.policyID)
 	if !found {
-		return fmt.Errorf("policy %s not found in config", o.policyID)
+		return fmt.Errorf("policy %q not found in config — run complyctl list to see available policy IDs", o.policyID)
 	}
 	ref := complytime.ParsePolicyRef(entry.URL)
 	eid := entry.EffectiveID()
@@ -117,7 +128,7 @@ func (o *scanOptions) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("Resolved policy version", "policy", ref.Repository, "version", version)
+	fmt.Fprintf(os.Stderr, "Resolved %s version: %s\n", ref.Repository, version)
 
 	graph, err := resolver.ResolvePolicyGraph(ref.Repository, version)
 	if err != nil {
@@ -126,11 +137,7 @@ func (o *scanOptions) run(ctx context.Context) error {
 
 	assessmentConfigs := policy.ExtractAssessmentConfigs(ref.Repository, graph)
 	groups := policy.GroupByEvaluator(assessmentConfigs, graph)
-
 	globalVars := cfg.Variables
-	if err := policy.ValidateGlobalVars(groups, globalVars, ws.Path()); err != nil {
-		return err
-	}
 
 	mgr, err := plugin.NewManager(o.pluginDir, logFile)
 	if err != nil {
@@ -144,16 +151,12 @@ func (o *scanOptions) run(ctx context.Context) error {
 
 	plugins := mgr.ListPlugins()
 	if len(plugins) == 0 {
-		return fmt.Errorf("no plugins found in %s (HealthCheck may have failed)", o.pluginDir)
+		return fmt.Errorf("no plugins found in %s (Describe may have failed)", o.pluginDir)
 	}
 
-	// Freshness check: determine whether generation state needs updating.
-	// Generate is always called because the plugin process is ephemeral and
-	// needs RouteGenerate to initialize its config (file paths, profile, etc.)
-	// before Scan can run. Generate is idempotent — calling it when artifacts
-	// are fresh recreates the same output.
+	// Freshness check: skip Generate RPC when artifacts are current.
 	// See R37: specs/001-gemara-native-workflow/research.md
-	stateStale := false
+	needsGenerate := false
 	cacheState, err := cache.LoadState(o.cacheDir)
 	if err != nil {
 		return fmt.Errorf("failed to load cache state: %w", err)
@@ -167,14 +170,13 @@ func (o *scanOptions) run(ctx context.Context) error {
 
 	switch {
 	case genState == nil:
-		logger.Info("No generation state found, generating", "policy", ref.Repository)
-		stateStale = true
+		fmt.Fprintf(os.Stderr, "No prior generation found — generating artifacts for %s\n", eid)
+		needsGenerate = true
 	case !genState.IsFresh(policyState.Digest):
-		logger.Warn("Policy cache updated since last generate — regenerating",
-			"policy", ref.Repository, "cached_digest", policyState.Digest, "gen_digest", genState.PolicyDigest)
-		stateStale = true
+		fmt.Fprintf(os.Stderr, "Policy %s updated since last generate — regenerating\n", eid)
+		needsGenerate = true
 	default:
-		logger.Info("Generation artifacts are fresh", "policy", ref.Repository)
+		fmt.Fprintf(os.Stderr, "Reusing generated artifacts for %s (policy unchanged)\n", eid)
 	}
 
 	var evaluatorIDs []string
@@ -189,21 +191,21 @@ func (o *scanOptions) run(ctx context.Context) error {
 		}
 	}
 
-	genSpin := terminal.NewSpinner("Generating policy artifacts...")
-	genSpin.Start()
+	if needsGenerate {
+		genSpin := terminal.NewSpinner("Generating policy artifacts...")
+		genSpin.Start()
 
-	for evalID, group := range groups {
-		for _, target := range policyTargets {
-			if err := mgr.RouteGenerate(ctx, evalID, globalVars, target.Variables, group.Configs); err != nil {
-				genSpin.Stop()
-				return err
+		for evalID, group := range groups {
+			for _, target := range policyTargets {
+				if err := mgr.RouteGenerate(ctx, evalID, globalVars, target.Variables, group.Configs); err != nil {
+					genSpin.Stop()
+					return err
+				}
 			}
 		}
-	}
 
-	genSpin.Stop()
+		genSpin.Stop()
 
-	if stateStale {
 		newGenState := policy.NewGenerationState(ref.Repository, policyState.Digest, evaluatorIDs)
 		if err := policy.SaveGenerationState(".", ref.Repository, newGenState); err != nil {
 			return fmt.Errorf("failed to save generation state: %w", err)
@@ -222,6 +224,7 @@ func (o *scanOptions) run(ctx context.Context) error {
 	reqToControl := extractReqToControlMap(graph)
 	eval := output.NewEvaluator(ref.Repository, reqToControl)
 	outDir := filepath.Join(".", complytime.WorkspaceDir, complytime.ScanOutputDir)
+	reportDir := "."
 
 	scanSpin := terminal.NewSpinner("Scanning targets...")
 	scanSpin.Start()
@@ -261,34 +264,32 @@ func (o *scanOptions) run(ctx context.Context) error {
 	}
 	fmt.Printf("Evaluation log written: %s\n", logPath)
 
-	fmt.Println(output.FormatScanSummary(allAssessments))
-
 	gemaraLog := eval.GemaraLog()
 
 	switch o.format {
 	case complytime.OutputFormatPretty:
 		md := output.NewMarkdown(ref.Repository, gemaraLog)
 		md.SetEmbedEvaluationLog(logPath)
-		mdPath, err := md.Write(outDir)
+		mdPath, err := md.Write(reportDir)
 		if err != nil {
 			return fmt.Errorf("failed to write markdown report: %w", err)
 		}
-		fmt.Printf("Markdown report written: %s\n", mdPath)
+		fmt.Printf("Markdown report written: %s\n\n", mdPath)
 	case complytime.OutputFormatSARIF:
-		sarifPath, err := output.ToSARIF(gemaraLog, "file:///scan", outDir)
+		sarifPath, err := output.ToSARIF(gemaraLog, "file:///scan", reportDir)
 		if err != nil {
 			return fmt.Errorf("failed to export SARIF: %w", err)
 		}
-		fmt.Printf("SARIF report written: %s\n", sarifPath)
+		fmt.Printf("SARIF report written: %s\n\n", sarifPath)
 	case complytime.OutputFormatOSCAL:
-		oscalPath, err := output.ToOSCAL(gemaraLog, outDir)
+		oscalPath, err := output.ToOSCAL(gemaraLog, reportDir)
 		if err != nil {
 			return fmt.Errorf("failed to export OSCAL: %w", err)
 		}
-		fmt.Printf("OSCAL report written: %s\n", oscalPath)
+		fmt.Printf("OSCAL report written: %s\n\n", oscalPath)
 	}
 
-	fmt.Println("\nScan completed.")
+	fmt.Println(output.FormatScanSummary(allAssessments, reqToControl, eid, targetIDs))
 	return nil
 }
 

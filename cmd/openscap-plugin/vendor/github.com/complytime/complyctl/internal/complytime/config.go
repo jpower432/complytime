@@ -148,7 +148,7 @@ func LoadFrom(configPath string) (*WorkspaceConfig, error) {
 				configPath,
 			)
 		}
-		return nil, fmt.Errorf("failed to read complytime file %s: %w", configPath, err)
+		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
 	}
 
 	var config WorkspaceConfig
@@ -208,11 +208,11 @@ func Save(config *WorkspaceConfig) error {
 func SaveTo(config *WorkspaceConfig, configPath string) error {
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal complytime: %w", err)
+		return fmt.Errorf("failed to marshal workspace config: %w", err)
 	}
 
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write complytime file %s: %w", configPath, err)
+		return fmt.Errorf("failed to write config file %s: %w", configPath, err)
 	}
 
 	return nil

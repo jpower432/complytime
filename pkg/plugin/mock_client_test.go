@@ -23,8 +23,8 @@ func newMockClient() *mockClient {
 	return &mockClient{}
 }
 
-func (m *mockClient) HealthCheck(_ context.Context, _ *plugin.HealthCheckRequest) (*plugin.HealthCheckResponse, error) {
-	return &plugin.HealthCheckResponse{
+func (m *mockClient) Describe(_ context.Context, _ *plugin.DescribeRequest) (*plugin.DescribeResponse, error) {
+	return &plugin.DescribeResponse{
 		Healthy: true,
 		Version: "mock-v1",
 	}, nil

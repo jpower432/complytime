@@ -25,28 +25,19 @@ import (
 
 var (
 	_ plugin.Plugin = (*PluginServer)(nil)
-	// ovalRegex is a regular expression for capturing the check short name
-	// in an OVAL check definition identifier.
-	ovalRegex = regexp.MustCompile(`^[^:]*?:[^-]*?-(.*?):.*?$`)
+	ovalRegex       = regexp.MustCompile(`^[^:]*?:[^-]*?-(.*?):.*?$`)
 )
 
 const ovalCheckType = "http://oval.mitre.org/XMLSchema/oval-definitions-5"
 
-type PluginServer struct {
-	Config *config.Config
-	// requirementIDs is populated during Generate and consumed during Scan.
-	// See R47: providers evaluate all requirements from Generate-time state.
-	requirementIDs []string
-}
+type PluginServer struct{}
 
 func New() *PluginServer {
-	return &PluginServer{
-		Config: config.NewConfig(),
-	}
+	return &PluginServer{}
 }
 
-func (s *PluginServer) HealthCheck(_ context.Context, _ *plugin.HealthCheckRequest) (*plugin.HealthCheckResponse, error) {
-	return &plugin.HealthCheckResponse{
+func (s *PluginServer) Describe(_ context.Context, _ *plugin.DescribeRequest) (*plugin.DescribeResponse, error) {
+	return &plugin.DescribeResponse{
 		Healthy:                 true,
 		Version:                 "0.1.0",
 		RequiredTargetVariables: []string{"profile"},
@@ -61,16 +52,33 @@ func (s *PluginServer) Generate(ctx context.Context, req *plugin.GenerateRequest
 		}, nil
 	}
 
-	evalConfig := mergeVariables(req.GlobalVariables, req.TargetVariables)
-	if err := s.Config.LoadSettings(evalConfig); err != nil {
+	vars := mergeVariables(req.GlobalVariables, req.TargetVariables)
+
+	profile, err := config.SanitizeInput(vars["profile"])
+	if err != nil {
 		return &plugin.GenerateResponse{
 			Success:      false,
-			ErrorMessage: fmt.Sprintf("configuration error: %v", err),
+			ErrorMessage: fmt.Sprintf("invalid profile: %v", err),
+		}, nil
+	}
+
+	datastream, err := config.ResolveDatastream(vars["datastream"])
+	if err != nil {
+		return &plugin.GenerateResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("datastream error: %v", err),
+		}, nil
+	}
+
+	if err := config.EnsureDirectories(); err != nil {
+		return &plugin.GenerateResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("directory setup failed: %v", err),
 		}, nil
 	}
 
 	hclog.Default().Info("Generating a tailoring file")
-	tailoringXML, err := xccdf.PolicyToXML(req.Configuration, s.Config)
+	tailoringXML, err := xccdf.PolicyToXML(req.Configuration, datastream, profile)
 	if err != nil {
 		return &plugin.GenerateResponse{
 			Success:      false,
@@ -78,8 +86,7 @@ func (s *PluginServer) Generate(ctx context.Context, req *plugin.GenerateRequest
 		}, nil
 	}
 
-	policyPath := s.Config.Files.Policy
-	dst, err := os.Create(policyPath)
+	dst, err := os.Create(config.PolicyPath)
 	if err != nil {
 		return &plugin.GenerateResponse{
 			Success:      false,
@@ -96,44 +103,38 @@ func (s *PluginServer) Generate(ctx context.Context, req *plugin.GenerateRequest
 
 	hclog.Default().Info("Generating remediation files")
 	pluginDir := filepath.Join(complytime.WorkspaceDir, config.PluginDir)
-	err = oscap.OscapGenerateFix(
-		ctx,
-		pluginDir,
-		s.Config.Parameters.Profile,
-		s.Config.Files.Policy,
-		s.Config.Files.Datastream,
-	)
-	if err != nil {
+	if err := oscap.OscapGenerateFix(ctx, pluginDir, profile, config.PolicyPath, datastream); err != nil {
 		return &plugin.GenerateResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("remediation generation failed: %v", err),
 		}, nil
 	}
 
-	s.requirementIDs = make([]string, 0, len(req.Configuration))
-	for _, cfg := range req.Configuration {
-		s.requirementIDs = append(s.requirementIDs, cfg.RequirementID)
-	}
-
 	return &plugin.GenerateResponse{Success: true}, nil
 }
 
-func (s *PluginServer) Scan(ctx context.Context, _ *plugin.ScanRequest) (*plugin.ScanResponse, error) {
-	if len(s.requirementIDs) == 0 {
-		return nil, fmt.Errorf("no requirements loaded — call Generate before Scan")
+func (s *PluginServer) Scan(ctx context.Context, req *plugin.ScanRequest) (*plugin.ScanResponse, error) {
+	if len(req.Targets) == 0 {
+		return nil, fmt.Errorf("no targets provided")
+	}
+	vars := req.Targets[0].Variables
+
+	profile, err := config.SanitizeInput(vars["profile"])
+	if err != nil {
+		return nil, fmt.Errorf("invalid profile: %w", err)
 	}
 
-	policyChecks := newChecks()
+	datastream, err := config.ResolveDatastream(vars["datastream"])
+	if err != nil {
+		return nil, fmt.Errorf("datastream error: %w", err)
+	}
 
-	_, err := scan.ScanSystem(ctx, s.Config, s.Config.Parameters.Profile)
+	_, err = scan.ScanSystem(ctx, datastream, profile)
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 
-	requirementRules := buildRequirementRuleMap(s.requirementIDs)
-	policyChecks.LoadRequirements(requirementRules)
-
-	file, err := os.Open(filepath.Clean(s.Config.Files.ARF))
+	file, err := os.Open(filepath.Clean(config.ARFPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open ARF: %w", err)
 	}
@@ -149,7 +150,6 @@ func (s *PluginServer) Scan(ctx context.Context, _ *plugin.ScanRequest) (*plugin
 		return nil, errors.New("result has no 'target' attribute")
 	}
 	target := targetEl.InnerText()
-	hclog.Default().Debug(fmt.Sprintf("hostname from results target is %s", target))
 
 	ruleTable := xccdf.NewRuleHashTable(xmlnode)
 	results := xmlnode.SelectElements("//rule-result")
@@ -158,8 +158,21 @@ func (s *PluginServer) Scan(ctx context.Context, _ *plugin.ScanRequest) (*plugin
 
 	for i := range results {
 		result := results[i]
-		ruleIDRef := result.SelectAttr("idref")
 
+		resultEl := result.SelectElement("result")
+		if resultEl == nil {
+			continue
+		}
+		resultText := resultEl.InnerText()
+
+		// Only report rules that oscap actually evaluated. The tailoring
+		// file already constrains the selected rules; unselected ones
+		// appear as "notselected" and are not assessment-relevant.
+		if resultText == "notselected" || resultText == "notapplicable" {
+			continue
+		}
+
+		ruleIDRef := result.SelectAttr("idref")
 		rule, ok := ruleTable[ruleIDRef]
 		if !ok {
 			continue
@@ -175,85 +188,31 @@ func (s *PluginServer) Scan(ctx context.Context, _ *plugin.ScanRequest) (*plugin
 		if ovalRefEl == nil {
 			continue
 		}
-		ovalCheck, err := parseCheck(ovalRefEl)
+		requirementID, err := parseCheck(ovalRefEl)
 		if err != nil {
 			return nil, err
 		}
-		if reqID, found := policyChecks.Match(ovalCheck); found {
-			mappedResult, err := mapResultStatus(result)
-			if err != nil {
-				return nil, err
-			}
-			resultText := ""
-			if el := result.SelectElement("result"); el != nil {
-				resultText = el.InnerText()
-			}
-			assessments = append(assessments, plugin.AssessmentLog{
-				RequirementID: reqID,
-				Steps: []plugin.Step{
-					{
-						Name:    ruleIDRef,
-						Result:  mappedResult,
-						Message: fmt.Sprintf("openscap rule-result is %s", resultText),
-					},
-				},
-				Message:    fmt.Sprintf("Host %s evaluated", target),
-				Confidence: plugin.ConfidenceLevelHigh,
-			})
-		}
-	}
 
-	// Emit error assessments for requirements with no matching result.
-	covered := make(map[string]bool)
-	for _, a := range assessments {
-		covered[a.RequirementID] = true
-	}
-	for _, reqID := range s.requirementIDs {
-		if !covered[reqID] {
-			assessments = append(assessments, plugin.AssessmentLog{
-				RequirementID: reqID,
-				Steps: []plugin.Step{{
-					Name:    "no-result",
-					Result:  plugin.ResultSkipped,
-					Message: "no matching rule-result found in ARF",
-				}},
-				Message:    "skipped — rule not evaluated by OpenSCAP",
-				Confidence: plugin.ConfidenceLevelNotSet,
-			})
+		mappedResult, err := mapResultStatus(resultText)
+		if err != nil {
+			return nil, err
 		}
+
+		assessments = append(assessments, plugin.AssessmentLog{
+			RequirementID: requirementID,
+			Steps: []plugin.Step{
+				{
+					Name:    ruleIDRef,
+					Result:  mappedResult,
+					Message: fmt.Sprintf("openscap rule-result is %s", resultText),
+				},
+			},
+			Message:    fmt.Sprintf("Host %s evaluated", target),
+			Confidence: plugin.ConfidenceLevelHigh,
+		})
 	}
 
 	return &plugin.ScanResponse{Assessments: assessments}, nil
-}
-
-// checks is a Set implementation for comparing OSCAL and OVAL check IDs.
-// In the new workflow it maps OVAL check short names to requirement IDs.
-type checks map[string]string
-
-func newChecks() checks {
-	return make(checks)
-}
-
-// LoadRequirements populates the set from requirement-to-checks mapping
-// built during Scan.
-func (c checks) LoadRequirements(ruleMap map[string][]string) {
-	for reqID, checkIDs := range ruleMap {
-		for _, checkID := range checkIDs {
-			c[checkID] = reqID
-		}
-	}
-}
-
-// Match returns the requirement ID if the check is in the set.
-func (c checks) Match(check string) (string, bool) {
-	reqID, ok := c[check]
-	return reqID, ok
-}
-
-// Has returns true if the check ID is tracked.
-func (c checks) Has(check string) bool {
-	_, ok := c[check]
-	return ok
 }
 
 // mergeVariables combines global and target variable maps into a single
@@ -269,18 +228,6 @@ func mergeVariables(global, target map[string]string) map[string]string {
 	return merged
 }
 
-// buildRequirementRuleMap creates a mapping from requirement IDs to their
-// OVAL check short names. In the OpenSCAP model, the requirement ID is
-// treated as the XCCDF rule short name, which is also the OVAL check short
-// name used in the ARF results.
-func buildRequirementRuleMap(requirementIDs []string) map[string][]string {
-	m := make(map[string][]string, len(requirementIDs))
-	for _, reqID := range requirementIDs {
-		m[reqID] = []string{reqID}
-	}
-	return m
-}
-
 func parseCheck(check *xmlquery.Node) (string, error) {
 	ovalCheckName := strings.TrimSpace(check.SelectAttr("name"))
 	if ovalCheckName == "" {
@@ -292,25 +239,17 @@ func parseCheck(check *xmlquery.Node) (string, error) {
 	if len(matches) < minimumPart {
 		return "", fmt.Errorf("check id %q is in unexpected format", ovalCheckName)
 	}
-	trimmedCheckName := matches[shortNameLoc]
-	return trimmedCheckName, nil
+	return matches[shortNameLoc], nil
 }
 
-func mapResultStatus(result *xmlquery.Node) (plugin.Result, error) {
-	resultEl := result.SelectElement("result")
-	if resultEl == nil {
-		return plugin.ResultError, errors.New("result node has no 'result' attribute")
-	}
-	switch resultEl.InnerText() {
+func mapResultStatus(resultText string) (plugin.Result, error) {
+	switch resultText {
 	case "pass", "fixed":
 		return plugin.ResultPassed, nil
 	case "fail":
 		return plugin.ResultFailed, nil
-	case "notselected", "notapplicable":
-		return plugin.ResultSkipped, nil
 	case "error", "unknown":
 		return plugin.ResultError, nil
 	}
-
-	return plugin.ResultError, fmt.Errorf("couldn't match %s", resultEl.InnerText())
+	return plugin.ResultError, fmt.Errorf("couldn't match %s", resultText)
 }

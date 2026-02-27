@@ -23,9 +23,10 @@ func initCmd(common *Common) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "init",
 		Short:        "Create a workspace configuration file",
-		SilenceUsage: true,
-		Example:      "complyctl init",
-		Args:         cobra.NoArgs,
+		SilenceUsage:      true,
+		Example:           "complyctl init",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return o.run()
 		},
@@ -44,7 +45,7 @@ func (o *initOptions) run() error {
 	}
 
 	if err := workspace.EnsureDir(); err != nil {
-		return fmt.Errorf("failed to create complytime directory: %w", err)
+		return fmt.Errorf("failed to create .complytime directory: %w", err)
 	}
 
 	policies := promptPolicies()

@@ -19,11 +19,6 @@ import (
 
 // FIXME(jpower432): This would probably make more sense in go-gemara/gemaraconv
 
-// OSCALAssessmentResults is the go-oscal envelope for a standalone OSCAL document.
-type OSCALAssessmentResults = oscalTypes.OscalCompleteSchema
-
-const oscalVersion = "1.2.0"
-
 // ToOSCAL converts a gemara.EvaluationLog to OSCAL assessment-results format.
 func ToOSCAL(log *gemara.EvaluationLog, outDir string) (string, error) {
 	now := time.Now().UTC()
@@ -32,9 +27,9 @@ func ToOSCAL(log *gemara.EvaluationLog, outDir string) (string, error) {
 	findings := make([]oscalTypes.Finding, 0)
 	for _, ce := range log.Evaluations {
 		for _, al := range ce.AssessmentLogs {
-			resultStr := gemaraResultToOSCAL(al.Result)
+			mapped := gemaraResultToOSCAL(al.Result)
 			remarks := al.Message
-			if resultStr == "not-applicable" {
+			if mapped.Reason == "not-applicable" {
 				remarks = fmt.Sprintf("Skipped due to Tailoring: %s", al.Message)
 			}
 			findings = append(findings, oscalTypes.Finding{
@@ -45,7 +40,8 @@ func ToOSCAL(log *gemara.EvaluationLog, outDir string) (string, error) {
 					Type:     "objective-id",
 					TargetId: al.Requirement.EntryId,
 					Status: oscalTypes.ObjectiveStatus{
-						State: resultStr,
+						State:  mapped.State,
+						Reason: mapped.Reason,
 					},
 				},
 				Remarks: remarks,
@@ -68,14 +64,14 @@ func ToOSCAL(log *gemara.EvaluationLog, outDir string) (string, error) {
 		result.Findings = &findings
 	}
 
-	doc := OSCALAssessmentResults{
+	doc := oscalTypes.OscalModels{
 		AssessmentResults: &oscalTypes.AssessmentResults{
 			UUID: newUUID(),
 			Metadata: oscalTypes.Metadata{
 				Title:        fmt.Sprintf("Compliance scan: %s", policyID),
 				LastModified: now,
 				Version:      "1.0.0",
-				OscalVersion: oscalVersion,
+				OscalVersion: oscalTypes.Version,
 			},
 			ImportAp: oscalTypes.ImportAp{
 				Href: fmt.Sprintf("file://assessment-plan-%s.json", policyID),
@@ -109,17 +105,22 @@ func newUUID() string {
 	return oscalUUID.NewUUID()
 }
 
-func gemaraResultToOSCAL(r gemara.Result) string {
+type oscalState struct {
+	State  string
+	Reason string
+}
+
+func gemaraResultToOSCAL(r gemara.Result) oscalState {
 	switch r {
 	case gemara.Passed:
-		return "pass"
+		return oscalState{State: "satisfied"}
 	case gemara.Failed:
-		return "fail"
+		return oscalState{State: "not-satisfied"}
 	case gemara.NotApplicable:
-		return "not-applicable"
+		return oscalState{State: "satisfied", Reason: "not-applicable"}
 	case gemara.Unknown:
-		return "error"
+		return oscalState{State: "not-satisfied", Reason: "unknown"}
 	default:
-		return "unknown"
+		return oscalState{State: "not-satisfied", Reason: "unknown"}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +17,7 @@ import (
 
 type getOptions struct {
 	*Common
+	timeout  time.Duration
 	cacheDir string
 }
 
@@ -26,9 +28,10 @@ func getCmd(common *Common) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "get [flags]",
 		Short:        "Fetch new/modified policies from OCI registry and update cache",
-		SilenceUsage: true,
-		Example:      "complyctl get",
-		Args:         cobra.NoArgs,
+		SilenceUsage:      true,
+		Example:           "complyctl get",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := o.validate(); err != nil {
 				return err
@@ -39,6 +42,7 @@ func getCmd(common *Common) *cobra.Command {
 			return o.run(cmd.Context())
 		},
 	}
+	cmd.Flags().DurationVarP(&o.timeout, "timeout", "t", complytime.DefaultCommandTimeout, "Maximum time for the get operation (e.g. 5m, 10m, 1h)")
 	return cmd
 }
 
@@ -56,9 +60,12 @@ func (o *getOptions) complete() error {
 }
 
 func (o *getOptions) run(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
+
 	workspace := complytime.NewWorkspace()
 	if err := workspace.LoadAndValidate(); err != nil {
-		return fmt.Errorf("failed to load complytime: %w", err)
+		return fmt.Errorf("failed to load workspace config: %w", err)
 	}
 
 	cfg := workspace.Config()

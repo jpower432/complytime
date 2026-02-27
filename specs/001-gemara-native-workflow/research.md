@@ -1165,3 +1165,200 @@ targets:
 - Keep reachability + add version comparison as separate check: Two checks for registry interaction is redundant. Version comparison implicitly proves reachability.
 - `--verbose` expands everything (version detail + provider config): Mixes concerns. Version comparison output is already clear per-policy.
 - Show full key list by default (no `--verbose`): Clutters default output for admins with many providers/variables. Count summary is sufficient for the happy path.
+
+## R56: Unit Test Strategy for Critical Untested Packages (Session 2026-02-26)
+
+**Decision**: Five unit test coverage decisions for three critical packages (`internal/policy/`, `pkg/plugin/discovery.go`, `internal/cache/state.go`) that lacked direct unit tests.
+
+| Decision | Choice | Rationale |
+|:---|:---|:---|
+| `internal/policy/` test scope | All exported functions with positive + negative cases | Dependency resolution core — `ResolvePolicyGraph`, `GroupByEvaluator`, `parsePolicyLayer`, `ExtractAssessmentConfigs`, generation state `Save/Load/IsFresh` all drive scan correctness |
+| Policy layer test fixtures | Minimal synthetic YAML stubs | Self-contained, no go-gemara fixture dependency. Stubs unmarshal into `gemara.Policy` — upstream shape changes break tests explicitly |
+| Plugin discovery test approach | Real temp directory with mock executables | Tests actual filesystem behavior (permission bits, prefix matching, evaluator ID extraction). Zero production code changes. Constitution II (Simplicity) |
+| `internal/cache/state.go` coverage | Indirect via `sync_test.go` (sufficient) | State operations exercised through sync scenarios: success, failure, incremental skip, 100-iteration stress test |
+| Resolver mock strategy | Interface-based mock at Loader level (`PolicyLoader` interface) | `ResolvePolicyGraph` calls `Loader.LoadLayerByMediaType`, `PolicyExists`, `ResolveVersion`. Interface keeps resolver tests focused on graph assembly. Loader gets separate tests against real OCI stores if needed |
+
+**New test files**:
+
+| File | Package | Key Functions | Scenarios |
+|:---|:---|:---|:---|
+| `internal/policy/resolver_test.go` | `policy_test` | `ResolvePolicyGraph`, `parsePolicyLayer`, `extractFromGemaraPolicy` | Empty/invalid inputs, missing layers, valid synthetic Gemara YAML, multi-evaluator extraction. Uses `PolicyLoader` interface mock |
+| `internal/policy/assessment_test.go` | `policy_test` | `ExtractAssessmentConfigs`, `GroupByEvaluator`, `ValidateGlobalVars` | Single-evaluator shortcut, multi-evaluator routing, empty graph, missing global vars |
+| `internal/policy/loader_test.go` | `policy_test` | `ResolveVersion`, `LoadLayerByMediaType`, `PolicyExists`, `ListCachedPolicies` | Cache miss, version resolution fallback, media type not found |
+| `internal/policy/generation_state_test.go` | `policy_test` | `SaveGenerationState`, `LoadGenerationState`, `IsFresh`, `NewGenerationState` | Save/load round-trip, digest match/mismatch, missing state file, corrupt JSON |
+| `pkg/plugin/discovery_test.go` | `plugin_test` | `DiscoverPlugins`, `scanDir`, `expandPath` | Valid executable discovery, non-executable skipped, prefix matching, evaluator ID extraction, empty dir, nonexistent dir, user-dir precedence over system-dir |
+
+**Interface addition**: `PolicyLoader` interface in `internal/policy/resolver.go` (or a `resolver_internal_test.go` mock) with methods: `LoadLayerByMediaType(policyID, version, mediaType string) ([]byte, error)`, `PolicyExists(policyID, version string) bool`, `ResolveVersion(policyID, configVersion string) (string, error)`. Production `Loader` satisfies this interface. Tests inject a mock implementation.
+
+**Constitution alignment**:
+- **I (Single Source of Truth)**: Test scenarios derived from the spec's edge case table and functional requirements — not invented independently
+- **II (Simplicity & Isolation)**: Each test file tests one source file. No cross-package test dependencies. Mock interfaces are minimal
+- **IV (Readability First)**: Synthetic YAML stubs are self-documenting — test reader sees the exact input structure
+- **V (Do Not Reinvent the Wheel)**: Uses `testify/assert` + `testify/require` (already vendored). `t.TempDir()` for filesystem tests. No custom test framework
+
+**Alternatives considered**:
+- Full OCI store integration tests for resolver: Couples resolver tests to OCI internals. Slower, harder to reason about failures
+- go-gemara fixture files for parsePolicyLayer: External dependency on upstream test data. Stubs are faster and break on contract changes
+- DirScanner interface for discovery: Adds abstraction layer to production code for testability only. Real temp dir tests actual behavior without code changes
+- Dedicated state_test.go: sync_test.go already exercises all state operations through 5 test scenarios including the 100-iteration stress test
+
+## R57: Terminal Output Redesign — Plain Default + Log Relocation (Session 2026-02-26b)
+
+**Decision**: Five UX decisions reshaping terminal output and log file handling.
+
+| Decision | Choice | Rationale |
+|:---|:---|:---|
+| Log file location | `.complytime/complyctl.log` | Logs are diagnostic artifacts — same category as scan output. Keeps workspace root clean. Supersedes `./complyctl.log` (Session 2026-02-23f) |
+| Default table rendering | Plain aligned text (podman-style) + emoji | Pipeable, works in all terminals, no ANSI capability assumptions. Supersedes charmbracelet default (R38) |
+| Scan summary totals | Compact inline: `44 ✅  3 ❌  2 ⏭️  1 ⚠️` | Single line, emoji counts, no labels. Matches podman/docker density |
+| `bubbles/table` dependency | Remove entirely; keep `lipgloss/table` for `--pretty` | `bubbles/table` was the heavy TUI widget. `lipgloss/table` sufficient for styled non-interactive output |
+| `list` columns | Two columns: `POLICY ID` + `VERSION` | Minimal like `podman images`. Registry visible in config if needed |
+
+**Supersedes**: R38 (charmbracelet rendering for all tabular outputs). R38 mandated `charmbracelet/bubbles/table` + `lipgloss` as default for all outputs. R57 inverts: plain is default, `lipgloss/table` is opt-in via `--pretty`.
+
+**Flag changes**:
+- `--plain` removed (plain is now the default)
+- `--pretty` added (enables `lipgloss/table` styled rendering)
+
+**Code impact**:
+
+| Component | Before | After |
+|:---|:---|:---|
+| `internal/terminal/table.go` | `RenderTable` (lipgloss default), `ShowPlainTable` (--plain) | `ShowPlainTable` becomes primary. `RenderTable` retained for `--pretty`. Default function is `ShowPlainTable` |
+| `cmd/complyctl/cli/providers.go` | `--plain` flag, `RenderTable` default | `--pretty` flag, `ShowPlainTable` default |
+| `cmd/complyctl/cli/list.go` | `RenderTable` default | `ShowPlainTable` default, two columns: POLICY ID + VERSION |
+| `internal/output/execution_plan.go` | `RenderTable` only | `ShowPlainTable` default, `RenderTable` via `--pretty` |
+| `internal/output/scan_summary.go` | charmbracelet totals table | Compact inline: `fmt.Fprintf` with emoji counts |
+| `cmd/complyctl/cli/root.go` | Log path: `./complyctl.log` | Log path: `.complytime/complyctl.log` via `WorkspaceDir` + `LogFileName` constants |
+| `internal/complytime/consts.go` | No `LogFileName` constant | Add `LogFileName = "complyctl.log"` |
+| `go.mod` / `vendor/` | `charmbracelet/bubbles` vendored | Remove `bubbles` dependency. Keep `lipgloss`, `lipgloss/table` |
+
+**Alternatives considered**:
+- Keep charmbracelet as default with `--plain` opt-out: Bulky in pipelines, breaks `grep`/`awk` workflows. Admin feedback: "more trouble than they are worth"
+- Drop tables entirely (key:value lines like `docker inspect`): Loses columnar alignment for multi-row data. Too sparse for `list` and `providers`
+- Remove `lipgloss` entirely (no `--pretty`): Removes all styled output capability. `--pretty` is low-cost to maintain and useful for demos/screenshots
+- Log to `~/.complytime/complyctl.log` (user home): Global log loses workspace context. Per-workspace log preserves which workspace generated which diagnostics
+
+## R58: Output Path Split + Discovery Command Simplification (Session 2026-02-26c)
+
+**Decision**: Three UX decisions refining output location and discovery command flags.
+
+| Decision | Choice | Rationale |
+|:---|:---|:---|
+| `--pretty` on discovery commands | Remove from `list` and `providers` | Discovery commands are informational — plain text is the right default. No persona needs styled output for `list` or `providers`. `--pretty` reserved for reporting/summary commands (`scan`, `generate --dry-run`). Reduces flag surface area |
+| `--format` output location | CWD (current working directory) | Formatted reports (OSCAL, SARIF, Markdown) are user-facing deliverables — users expect them in a visible location, not buried in `.complytime/scan/`. EvaluationLog (diagnostic artifact) stays in hidden dir. Terminal summary stays on stdout |
+| EvaluationLog path printing | Always print to terminal | EvaluationLog is always produced. Users need to know where it is for debugging. One line of output, low noise. Deterministic path but worth surfacing |
+
+**Output path split**:
+
+| Artifact | Location | Rationale |
+|:---|:---|:---|
+| EvaluationLog (always) | `{workspace}/.complytime/scan/` | Diagnostic artifact — hidden dir is appropriate |
+| Formatted report (`--format`) | CWD | User-facing deliverable — visible location expected |
+| Log file | `{workspace}/.complytime/complyctl.log` | Diagnostic — hidden dir (unchanged from R57) |
+| Generation state | `{workspace}/.complytime/generation/` | Internal state — hidden dir (unchanged) |
+
+**Supersedes**: R57 partially — R57 applied `--pretty` to all tabular commands including `list` and `providers`. R58 narrows `--pretty` scope to `scan` and `generate --dry-run` only.
+
+**Code impact**:
+
+| Component | Before | After |
+|:---|:---|:---|
+| `cmd/complyctl/cli/list.go` | `--pretty` flag, `ShowPlainTable` default | `--pretty` flag removed. `ShowPlainTable` only |
+| `cmd/complyctl/cli/providers.go` | `--pretty` flag, `ShowPlainTable` default | `--pretty` flag removed. `ShowPlainTable` only |
+| `cmd/complyctl/cli/scan.go` | `outDir = ".complytime/scan"` for all output | `outDir` for EvaluationLog stays `.complytime/scan/`. Formatted reports (`--format`) written to `"."` (CWD) |
+| `internal/output/evaluator.go` | `Write(outDir)` writes to passed dir | No change — caller controls path |
+| `internal/output/oscal.go` | `ToOSCAL(log, outDir)` writes to passed dir | No change — caller passes CWD for `--format` |
+| `internal/output/markdown.go` | `Write(outDir)` writes to passed dir | No change — caller passes CWD for `--format` |
+| `internal/output/sarif.go` | `ToSARIF(log, uri, outDir)` writes to passed dir | No change — caller passes CWD for `--format` |
+
+**Constitution alignment**:
+- **II (Simplicity & Isolation)**: Removing `--pretty` from discovery commands eliminates unused flag paths. Fewer code branches = simpler maintenance
+- **VI (Composability)**: Plain-only discovery output is pipeable by default. No styled output to strip
+- **VII (Convention Over Configuration)**: Formatted reports in CWD matches standard CLI behavior (output where the user is working). Zero flags needed for the common case
+
+**Alternatives considered**:
+- `--output-dir` / `-o` flag on scan for explicit control: Added complexity for rare use case. CWD is the right default. Users who want a specific directory can `cd` there first
+- Send formatted output to stdout (kubectl-style): Would require stderr for summary, complicating the output model. File-based is simpler and already established
+- Move EvaluationLog to CWD when `--format` is specified: EvaluationLog is a diagnostic artifact — mixing it with user-facing deliverables muddies the intent. Hidden dir is correct for diagnostics
+
+## R59: UX Refresh — Lipgloss Default, Scan Results Table, Execution Plan Collapse (Session 2026-02-26d)
+
+**Decision**: Five interconnected UX decisions replacing the plain-default/`--pretty`-opt-in model with lipgloss-as-universal-default and restructuring scan/generate output.
+
+| Decision | Choice | Rationale |
+|:---|:---|:---|
+| Scan results table columns | Requirement ID, Control ID, Status (emoji), Message | Admins need enough context to act on failures without cross-referencing the EvaluationLog. Supersedes FR-037 "no table / ActionError-style" |
+| Default table rendering | Lipgloss-rendered tables with subtle borders as universal default | Current `--pretty` look becomes the only look. Terminal-width-adaptive, cleaner than raw whitespace padding. `--pretty` flag removed from all commands |
+| Report-style layout | Intro text → subtle lipgloss table → conclusion text | Wrapping tables with contextual intro/conclusion provides scannable, professional output. All tabular commands follow this pattern |
+| Execution plan structure | Single table: Target, Provider, Requirements, Status | Two stacked lipgloss tables was the bulk problem. One table gives the same info in one view. Supersedes FR-033 two-table design |
+| Non-TTY fallback | `ShowPlainTable` retained for piped/redirected output | TTY detection at render time — lipgloss for interactive, plain for pipes. No user-facing flag. Lipgloss gracefully degrades |
+
+**Supersedes**: R57 (plain default + `--pretty` opt-in), R58 partially (discovery commands had no `--pretty` — now all commands use lipgloss with no flag). R38 fully (charmbracelet default → plain default → lipgloss default). Session 2026-02-26c (removed `--pretty` from `list`/`providers` — now `--pretty` removed from everything).
+
+**Flag changes**:
+- `--pretty` removed from `scan` and `generate` (was the last two commands that had it)
+- `--plain` remains removed (from R57)
+- No new flags — lipgloss is unconditional for TTY, plain for non-TTY
+
+**Scan results table design**:
+
+```text
+Scan: cis-fedora-l1-workstation | Target: local | 50 requirements
+
+┌─────────────────────┬─────────────────────┬────────┬──────────────────────────────────────┐
+│ Requirement ID      │ Control ID          │ Status │ Message                              │
+├─────────────────────┼─────────────────────┼────────┼──────────────────────────────────────┤
+│ xccdf_req_dconf_db  │ dconf_db_up_to_date │ ❌     │ dconf database is not up to date     │
+│ xccdf_req_firewalld │ service_firewalld   │ ❌     │ firewalld service is not running      │
+│ xccdf_req_audit_cfg │ auditd_config       │ ⚠️     │ evaluation error: auditd not present  │
+│ xccdf_req_usb_guard │ usb_guard_policy    │ ⏭️     │ not applicable: no USB devices        │
+└─────────────────────┴─────────────────────┴────────┴──────────────────────────────────────┘
+
+44 ✅  2 ❌  1 ⚠️  1 ⏭️
+Evaluation log: .complytime/scan/evaluation-log.yaml
+```
+
+**Execution plan (collapsed)**:
+
+```text
+Execution Plan: cis-fedora-l1-workstation
+
+┌────────┬──────────┬──────────────┬─────────┐
+│ Target │ Provider │ Requirements │ Status  │
+├────────┼──────────┼──────────────┼─────────┤
+│ local  │ openscap │ 47           │ healthy │
+└────────┴──────────┴──────────────┴─────────┘
+
+Generation completed.
+```
+
+**Code impact**:
+
+| Component | Before | After |
+|:---|:---|:---|
+| `internal/terminal/table.go` | `ShowPlainTable` (default), `RenderTable` (--pretty) | `RenderTable` becomes primary (TTY). `ShowPlainTable` fallback (non-TTY). New `RenderReport(intro, headers, rows, conclusion)` function wraps the pattern. TTY detection via `term.IsTerminal(os.Stdout.Fd())` |
+| `internal/output/scan_summary.go` | `FormatScanSummary` returns emoji+message lines + inline totals | `FormatScanSummary` returns report-style: intro text, 4-column table rows (reqID, ctrlID, status, message), conclusion (totals + file paths). Accepts `reqToControl` map for control ID lookup |
+| `internal/output/execution_plan.go` | `FormatExecutionPlan` with two tables + `pretty bool` param | `FormatExecutionPlan` with single table (Target, Provider, Requirements, Status). No `pretty` param — always lipgloss for TTY. `ProviderRoute` and `TargetScope` structs merged into single `ExecutionPlanRow` |
+| `cmd/complyctl/cli/scan.go` | `--pretty` flag, `o.pretty` field | Remove `--pretty` flag and `pretty` field from `scanOptions` |
+| `cmd/complyctl/cli/generate.go` | `--pretty` flag, `o.pretty` field | Remove `--pretty` flag and `pretty` field from `generateOptions` |
+| `cmd/complyctl/cli/list.go` | `ShowPlainTable` only | `RenderTable` (TTY) / `ShowPlainTable` (non-TTY) via `terminal.RenderReport` |
+| `cmd/complyctl/cli/providers.go` | `ShowPlainTable` only | `RenderTable` (TTY) / `ShowPlainTable` (non-TTY) via `terminal.RenderReport` |
+| `internal/complytime/consts.go` | `OutputFormatPretty = "pretty"` | Unchanged — `--format pretty` is the Markdown report format, not a rendering style |
+
+**TTY detection strategy**: `internal/terminal/table.go` gains an `IsTTY()` function using `term.IsTerminal(os.Stdout.Fd())`. The `charmbracelet/x/term` package is already vendored (used by `TerminalWidth()`). All render functions check TTY status and dispatch to lipgloss or plain accordingly. No caller changes needed — the terminal package handles it transparently.
+
+**Constitution alignment**:
+- **I (Single Source of Truth)**: TTY detection centralized in `internal/terminal`. Scan results table column set defined once in `FormatScanSummary`. `reqToControl` map is the single source for requirement→control mapping.
+- **II (Simplicity & Isolation)**: Removing `--pretty` from all commands eliminates branching logic in every CLI command. One rendering path per TTY state, not per flag combination.
+- **IV (Readability First)**: Scan results table gives admins requirement ID + control ID + message in one view — no cross-referencing needed. Report-style layout (intro → table → conclusion) provides natural reading flow.
+- **V (Do Not Reinvent the Wheel)**: `lipgloss/table` already handles terminal width adaptation, border rendering, and cell padding. `term.IsTerminal` from `charmbracelet/x/term` already vendored.
+- **VI (Composability)**: Non-TTY fallback to plain text preserves pipeability. `grep`, `awk`, `jq` work on piped output.
+- **VII (Convention Over Configuration)**: No flags needed — lipgloss for interactive, plain for pipes. Zero decisions for the user. Matches how modern CLIs like `gh` and `bat` detect TTY automatically.
+
+**Alternatives considered**:
+- Keep `--pretty` as opt-in for lipgloss: Two rendering paths to maintain. Admin feedback: "Remove pretty, make the default stylized." User explicitly wants one good default, not a flag.
+- Use `--no-color` instead of TTY detection: Forces the user to opt out. TTY detection is automatic and handles CI/pipe contexts transparently. `NO_COLOR` env var is a future addition (standard convention) but not a flag.
+- Show all results (including passed) in scan table: 47 green rows clutters the table. Non-passing only keeps the table actionable. Passed count in totals line confirms nothing was missed.
+- Keep two execution plan tables with lipgloss: Still bulky. User explicitly said generate output is "super bulky." Single table collapses Provider Routing + Target Scope into one view.
+- Add `--all` flag for full scan table: Added complexity for a niche use case. EvaluationLog already has full details. The table's job is to surface actionable items.

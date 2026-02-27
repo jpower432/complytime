@@ -10,8 +10,6 @@ import (
 
 	xccdf "github.com/complytime/complyctl/cmd/openscap-plugin/xccdftype"
 	"github.com/complytime/complyctl/pkg/plugin"
-
-	"github.com/complytime/complyctl/cmd/openscap-plugin/config"
 )
 
 // This is a supporting function to get the profile element from the testing Datastream.
@@ -568,26 +566,6 @@ func TestUpdateTailoringValues(t *testing.T) {
 				{IDRef: "xccdf_org.ssgproject.content_value_var2", Value: "value2"},
 			},
 		},
-		{
-			name:            "Reserved parameter keys are skipped",
-			tailoringValues: []xccdf.SetValueElement{},
-			dsProfileValues: []xccdf.SetValueElement{},
-			configuration: []plugin.AssessmentConfiguration{
-				{Parameters: map[string]string{
-					"evaluator_id": "openscap",
-					"control_id":   "cis_fedora_1-1.1.1",
-					"workspace":    "./.complytime/scan",
-					"profile":      "cis_workstation_l1",
-					"policy":       "tailoring.xml",
-					"arf":          "arf-results.xml",
-					"results":      "xccdf-results.xml",
-					"var1":         "new_value",
-				}},
-			},
-			expectedValues: []xccdf.SetValueElement{
-				{IDRef: "xccdf_org.ssgproject.content_value_var1", Value: "new_value"},
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -661,19 +639,6 @@ func TestGetTailoringValues(t *testing.T) {
 			name: "Configuration without variables",
 			configuration: []plugin.AssessmentConfiguration{
 				{Parameters: nil},
-			},
-			expectedError:  false,
-			expectedResult: []xccdf.SetValueElement{},
-		},
-		{
-			name: "Reserved parameter keys are skipped during validation",
-			configuration: []plugin.AssessmentConfiguration{
-				{Parameters: map[string]string{
-					"evaluator_id": "openscap",
-					"control_id":   "cis_fedora_1-1.1.1",
-					"workspace":    "./.complytime/scan",
-					"profile":      "cis_workstation_l1",
-				}},
 			},
 			expectedError:  false,
 			expectedResult: []xccdf.SetValueElement{},
@@ -763,10 +728,6 @@ func TestPolicyToXML(t *testing.T) {
 		},
 	}
 
-	cfg := new(config.Config)
-	cfg.Files.Datastream = dsPath
-	cfg.Parameters.Profile = profileId
-
 	expectedXML := `<?xml version="1.0" encoding="UTF-8"?>
 <xccdf-1.2:Tailoring xmlns:xccdf-1.2="http://checklists.nist.gov/xccdf/1.2" id="xccdf_complytime.openscapplugin_tailoring_complytime">
   <xccdf-1.2:benchmark href="` + dsPath + `"></xccdf-1.2:benchmark>
@@ -782,7 +743,7 @@ func TestPolicyToXML(t *testing.T) {
   </xccdf-1.2:Profile>
 </xccdf-1.2:Tailoring>`
 
-	result, err := PolicyToXML(tailoringConfig, cfg)
+	result, err := PolicyToXML(tailoringConfig, dsPath, profileId)
 	if err != nil {
 		t.Fatalf("PolicyToXML() error = %v", err)
 	}

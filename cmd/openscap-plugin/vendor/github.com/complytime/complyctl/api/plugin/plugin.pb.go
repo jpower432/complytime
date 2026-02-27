@@ -617,27 +617,27 @@ func (x *Step) GetMessage() string {
 	return ""
 }
 
-// HealthCheckRequest verifies plugin availability
-type HealthCheckRequest struct {
+// DescribeRequest is sent to discover plugin identity and requirements.
+type DescribeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *HealthCheckRequest) Reset() {
-	*x = HealthCheckRequest{}
+func (x *DescribeRequest) Reset() {
+	*x = DescribeRequest{}
 	mi := &file_plugin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HealthCheckRequest) String() string {
+func (x *DescribeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HealthCheckRequest) ProtoMessage() {}
+func (*DescribeRequest) ProtoMessage() {}
 
-func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
+func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_plugin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -649,13 +649,14 @@ func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HealthCheckRequest.ProtoReflect.Descriptor instead.
-func (*HealthCheckRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use DescribeRequest.ProtoReflect.Descriptor instead.
+func (*DescribeRequest) Descriptor() ([]byte, []int) {
 	return file_plugin_proto_rawDescGZIP(), []int{8}
 }
 
-// HealthCheckResponse indicates plugin health status
-type HealthCheckResponse struct {
+// DescribeResponse reports plugin identity, health, and declared variable
+// requirements used by doctor diagnostics.
+type DescribeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Health status
 	Healthy bool `protobuf:"varint,1,opt,name=healthy,proto3" json:"healthy,omitempty"`
@@ -673,20 +674,20 @@ type HealthCheckResponse struct {
 	sizeCache               protoimpl.SizeCache
 }
 
-func (x *HealthCheckResponse) Reset() {
-	*x = HealthCheckResponse{}
+func (x *DescribeResponse) Reset() {
+	*x = DescribeResponse{}
 	mi := &file_plugin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HealthCheckResponse) String() string {
+func (x *DescribeResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HealthCheckResponse) ProtoMessage() {}
+func (*DescribeResponse) ProtoMessage() {}
 
-func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
+func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_plugin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -698,40 +699,40 @@ func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HealthCheckResponse.ProtoReflect.Descriptor instead.
-func (*HealthCheckResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use DescribeResponse.ProtoReflect.Descriptor instead.
+func (*DescribeResponse) Descriptor() ([]byte, []int) {
 	return file_plugin_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *HealthCheckResponse) GetHealthy() bool {
+func (x *DescribeResponse) GetHealthy() bool {
 	if x != nil {
 		return x.Healthy
 	}
 	return false
 }
 
-func (x *HealthCheckResponse) GetVersion() string {
+func (x *DescribeResponse) GetVersion() string {
 	if x != nil {
 		return x.Version
 	}
 	return ""
 }
 
-func (x *HealthCheckResponse) GetErrorMessage() string {
+func (x *DescribeResponse) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
 	}
 	return ""
 }
 
-func (x *HealthCheckResponse) GetRequiredGlobalVariables() []string {
+func (x *DescribeResponse) GetRequiredGlobalVariables() []string {
 	if x != nil {
 		return x.RequiredGlobalVariables
 	}
 	return nil
 }
 
-func (x *HealthCheckResponse) GetRequiredTargetVariables() []string {
+func (x *DescribeResponse) GetRequiredTargetVariables() []string {
 	if x != nil {
 		return x.RequiredTargetVariables
 	}
@@ -785,9 +786,9 @@ const file_plugin_proto_rawDesc = "" +
 	"\x04Step\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x123\n" +
 	"\x06result\x18\x02 \x01(\x0e2\x1b.complyctl.plugin.v1.ResultR\x06result\x12\x18\n" +
-	"\amessage\x18\x03 \x01(\tR\amessage\"\x14\n" +
-	"\x12HealthCheckRequest\"\xe6\x01\n" +
-	"\x13HealthCheckResponse\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\x11\n" +
+	"\x0fDescribeRequest\"\xe3\x01\n" +
+	"\x10DescribeResponse\x12\x18\n" +
 	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12#\n" +
 	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12:\n" +
@@ -804,11 +805,11 @@ const file_plugin_proto_rawDesc = "" +
 	"\rRESULT_PASSED\x10\x01\x12\x11\n" +
 	"\rRESULT_FAILED\x10\x02\x12\x12\n" +
 	"\x0eRESULT_SKIPPED\x10\x03\x12\x10\n" +
-	"\fRESULT_ERROR\x10\x042\x90\x02\n" +
+	"\fRESULT_ERROR\x10\x042\x87\x02\n" +
 	"\x06Plugin\x12W\n" +
 	"\bGenerate\x12$.complyctl.plugin.v1.GenerateRequest\x1a%.complyctl.plugin.v1.GenerateResponse\x12K\n" +
-	"\x04Scan\x12 .complyctl.plugin.v1.ScanRequest\x1a!.complyctl.plugin.v1.ScanResponse\x12`\n" +
-	"\vHealthCheck\x12'.complyctl.plugin.v1.HealthCheckRequest\x1a(.complyctl.plugin.v1.HealthCheckResponseBDZBgithub.com/complytime/complytime/internal/proto/plugin/v1;pluginv1b\x06proto3"
+	"\x04Scan\x12 .complyctl.plugin.v1.ScanRequest\x1a!.complyctl.plugin.v1.ScanResponse\x12W\n" +
+	"\bDescribe\x12$.complyctl.plugin.v1.DescribeRequest\x1a%.complyctl.plugin.v1.DescribeResponseBDZBgithub.com/complytime/complytime/internal/proto/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_plugin_proto_rawDescOnce sync.Once
@@ -835,8 +836,8 @@ var file_plugin_proto_goTypes = []any{
 	(*ScanResponse)(nil),            // 7: complyctl.plugin.v1.ScanResponse
 	(*AssessmentLog)(nil),           // 8: complyctl.plugin.v1.AssessmentLog
 	(*Step)(nil),                    // 9: complyctl.plugin.v1.Step
-	(*HealthCheckRequest)(nil),      // 10: complyctl.plugin.v1.HealthCheckRequest
-	(*HealthCheckResponse)(nil),     // 11: complyctl.plugin.v1.HealthCheckResponse
+	(*DescribeRequest)(nil),         // 10: complyctl.plugin.v1.DescribeRequest
+	(*DescribeResponse)(nil),        // 11: complyctl.plugin.v1.DescribeResponse
 	nil,                             // 12: complyctl.plugin.v1.GenerateRequest.GlobalVariablesEntry
 	nil,                             // 13: complyctl.plugin.v1.GenerateRequest.TargetVariablesEntry
 	nil,                             // 14: complyctl.plugin.v1.AssessmentConfiguration.ParametersEntry
@@ -855,10 +856,10 @@ var file_plugin_proto_depIdxs = []int32{
 	1,  // 9: complyctl.plugin.v1.Step.result:type_name -> complyctl.plugin.v1.Result
 	2,  // 10: complyctl.plugin.v1.Plugin.Generate:input_type -> complyctl.plugin.v1.GenerateRequest
 	5,  // 11: complyctl.plugin.v1.Plugin.Scan:input_type -> complyctl.plugin.v1.ScanRequest
-	10, // 12: complyctl.plugin.v1.Plugin.HealthCheck:input_type -> complyctl.plugin.v1.HealthCheckRequest
+	10, // 12: complyctl.plugin.v1.Plugin.Describe:input_type -> complyctl.plugin.v1.DescribeRequest
 	4,  // 13: complyctl.plugin.v1.Plugin.Generate:output_type -> complyctl.plugin.v1.GenerateResponse
 	7,  // 14: complyctl.plugin.v1.Plugin.Scan:output_type -> complyctl.plugin.v1.ScanResponse
-	11, // 15: complyctl.plugin.v1.Plugin.HealthCheck:output_type -> complyctl.plugin.v1.HealthCheckResponse
+	11, // 15: complyctl.plugin.v1.Plugin.Describe:output_type -> complyctl.plugin.v1.DescribeResponse
 	13, // [13:16] is the sub-list for method output_type
 	10, // [10:13] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name

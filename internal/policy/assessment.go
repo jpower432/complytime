@@ -3,8 +3,6 @@
 package policy
 
 import (
-	"fmt"
-
 	"github.com/complytime/complyctl/pkg/plugin"
 )
 
@@ -12,25 +10,6 @@ import (
 type EvaluatorGroup struct {
 	EvaluatorID string
 	Configs     []plugin.AssessmentConfiguration
-}
-
-// ValidateGlobalVars checks that global variables are present when evaluators
-// are specified in the policy. Groups with an empty evaluator ID use broadcast
-// mode and don't require explicit config.
-// See FR-036, R48: specs/001-gemara-native-workflow/research.md
-func ValidateGlobalVars(groups map[string]EvaluatorGroup, globalVars map[string]string, configPath string) error {
-	if len(globalVars) > 0 {
-		return nil
-	}
-	for evalID := range groups {
-		if evalID != "" {
-			return fmt.Errorf(
-				"evaluator %q requires global variables in %s — add a 'variables' section with required fields (see provider documentation)",
-				evalID, configPath,
-			)
-		}
-	}
-	return nil
 }
 
 // ExtractAssessmentConfigs converts a DependencyGraph into plugin-ready

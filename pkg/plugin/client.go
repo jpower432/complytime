@@ -92,12 +92,12 @@ const (
 	ConfidenceLevelHigh         ConfidenceLevel = 4
 )
 
-// HealthCheckRequest is sent to verify a plugin is alive and compatible.
-type HealthCheckRequest struct{}
+// DescribeRequest is sent to discover plugin identity and requirements.
+type DescribeRequest struct{}
 
-// HealthCheckResponse reports plugin health, version, any error, and
-// required variable names for doctor validation (R51).
-type HealthCheckResponse struct {
+// DescribeResponse reports plugin identity, health, version, and declared
+// variable requirements used by doctor diagnostics (R51).
+type DescribeResponse struct {
 	Healthy                 bool
 	Version                 string
 	ErrorMessage            string
@@ -119,15 +119,15 @@ func (c *Client) Close() {
 	}
 }
 
-func (c *Client) HealthCheck(ctx context.Context, req *HealthCheckRequest) (*HealthCheckResponse, error) {
+func (c *Client) Describe(ctx context.Context, req *DescribeRequest) (*DescribeResponse, error) {
 	_ = req
 
-	protoResp, err := c.grpcClient.HealthCheck(ctx, &pluginv2.HealthCheckRequest{})
+	protoResp, err := c.grpcClient.Describe(ctx, &pluginv2.DescribeRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("HealthCheck RPC failed: %w", err)
+		return nil, fmt.Errorf("Describe RPC failed: %w", err)
 	}
 
-	return &HealthCheckResponse{
+	return &DescribeResponse{
 		Healthy:                 protoResp.GetHealthy(),
 		Version:                 protoResp.GetVersion(),
 		ErrorMessage:            protoResp.GetErrorMessage(),

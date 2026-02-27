@@ -380,6 +380,158 @@ func TestCheckVariables_NoVerbose_NoDetail(t *testing.T) {
 	}
 }
 
+func TestCheckVariables_UnmappedTargetVars_NilResolver(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Variables: map[string]string{"output_dir": "/tmp"},
+		Policies:  []complytime.PolicyEntry{{URL: "reg.io/policies/nist@v1.0.0"}},
+		Targets:   []complytime.TargetConfig{{ID: "host1", Policies: []string{"nist"}}},
+	}
+	health := []ProviderHealth{{
+		EvaluatorID:             "openscap",
+		RequiredGlobalVariables: []string{"output_dir"},
+		RequiredTargetVariables: []string{"profile"},
+	}}
+
+	results := CheckVariables(cfg, health, nil, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusFail {
+		t.Errorf("expected fail for unmapped target vars, got %s: %s", results[0].Status, results[0].Message)
+	}
+	if !strings.Contains(results[0].Message, "target vars not validated") {
+		t.Errorf("expected 'target vars not validated' in message, got %q", results[0].Message)
+	}
+	if !strings.Contains(results[0].Message, "no policy resolver") {
+		t.Errorf("expected reason in message, got %q", results[0].Message)
+	}
+}
+
+func TestCheckVariables_UnmappedTargetVars_ResolverFails(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Variables: map[string]string{},
+		Policies:  []complytime.PolicyEntry{{URL: "reg.io/policies/nist@v1.0.0"}},
+		Targets: []complytime.TargetConfig{{
+			ID:       "host1",
+			Policies: []string{"nist"},
+		}},
+	}
+	health := []ProviderHealth{{
+		EvaluatorID:             "openscap",
+		RequiredTargetVariables: []string{"profile"},
+	}}
+
+	resolver := newMockPolicyGraphResolver()
+
+	results := CheckVariables(cfg, health, resolver, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusFail {
+		t.Errorf("expected fail, got %s: %s", results[0].Status, results[0].Message)
+	}
+	if !strings.Contains(results[0].Message, "target vars not validated") {
+		t.Errorf("expected 'target vars not validated' in message, got %q", results[0].Message)
+	}
+	if !strings.Contains(results[0].Message, "policy graph unresolved") {
+		t.Errorf("expected 'policy graph unresolved' in message, got %q", results[0].Message)
+	}
+}
+
+func TestCheckVariables_UnmappedTargetVars_EvaluatorNotInGraph(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Variables: map[string]string{},
+		Policies:  []complytime.PolicyEntry{{URL: "reg.io/policies/nist@v1.0.0"}},
+		Targets: []complytime.TargetConfig{{
+			ID:       "host1",
+			Policies: []string{"nist"},
+		}},
+	}
+	health := []ProviderHealth{{
+		EvaluatorID:             "unused-evaluator",
+		RequiredTargetVariables: []string{"profile"},
+	}}
+
+	resolver := newMockPolicyGraphResolver()
+	resolver.versions["policies/nist@v1.0.0"] = "v1.0.0"
+	resolver.graphs["policies/nist@v1.0.0"] = &policy.DependencyGraph{
+		PolicyID:    "policies/nist",
+		EvaluatorID: "openscap",
+	}
+
+	results := CheckVariables(cfg, health, resolver, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusPass {
+		t.Errorf("expected pass for unused evaluator, got %s: %s", results[0].Status, results[0].Message)
+	}
+	if !strings.Contains(results[0].Message, "no target mapping") {
+		t.Errorf("expected 'no target mapping' in message, got %q", results[0].Message)
+	}
+}
+
+func TestCheckVariables_MappedTargetVars_MissingProfile(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Variables: map[string]string{},
+		Policies:  []complytime.PolicyEntry{{URL: "reg.io/policies/nist@v1.0.0"}},
+		Targets: []complytime.TargetConfig{{
+			ID:        "host1",
+			Policies:  []string{"nist"},
+			Variables: map[string]string{},
+		}},
+	}
+	health := []ProviderHealth{{
+		EvaluatorID:             "openscap",
+		RequiredTargetVariables: []string{"profile"},
+	}}
+
+	resolver := newMockPolicyGraphResolver()
+	resolver.versions["policies/nist@v1.0.0"] = "v1.0.0"
+	resolver.graphs["policies/nist@v1.0.0"] = &policy.DependencyGraph{
+		PolicyID:    "policies/nist",
+		EvaluatorID: "openscap",
+	}
+
+	results := CheckVariables(cfg, health, resolver, false)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusFail {
+		t.Errorf("expected fail for missing profile, got %s: %s", results[0].Status, results[0].Message)
+	}
+	if !strings.Contains(results[0].Message, "profile") {
+		t.Errorf("expected 'profile' in message, got %q", results[0].Message)
+	}
+}
+
+func TestCheckVariables_Verbose_UnmappedTargetVars(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Variables: map[string]string{},
+		Policies:  []complytime.PolicyEntry{{URL: "reg.io/policies/nist@v1.0.0"}},
+		Targets: []complytime.TargetConfig{{
+			ID:       "host1",
+			Policies: []string{"nist"},
+		}},
+	}
+	health := []ProviderHealth{{
+		EvaluatorID:             "openscap",
+		RequiredTargetVariables: []string{"profile"},
+	}}
+
+	results := CheckVariables(cfg, health, nil, true)
+
+	foundNotValidated := false
+	for _, r := range results {
+		if strings.Contains(r.Message, "profile") && strings.Contains(r.Message, "not validated") {
+			foundNotValidated = true
+		}
+	}
+	if !foundNotValidated {
+		t.Error("expected verbose detail showing profile as not validated")
+	}
+}
+
 // --- CheckPolicyActivePeriod Tests ---
 
 func TestCheckPolicyActivePeriod_NilConfig(t *testing.T) {

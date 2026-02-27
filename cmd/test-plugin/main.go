@@ -29,8 +29,8 @@ type testEvaluator struct {
 	requirementIDs []string
 }
 
-func (t *testEvaluator) HealthCheck(_ context.Context, _ *plugin.HealthCheckRequest) (*plugin.HealthCheckResponse, error) {
-	return &plugin.HealthCheckResponse{
+func (t *testEvaluator) Describe(_ context.Context, _ *plugin.DescribeRequest) (*plugin.DescribeResponse, error) {
+	return &plugin.DescribeResponse{
 		Healthy:                 true,
 		Version:                 "test-v0.1.0",
 		RequiredGlobalVariables: []string{"workspace"},

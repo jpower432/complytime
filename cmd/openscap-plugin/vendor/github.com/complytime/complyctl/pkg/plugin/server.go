@@ -17,12 +17,12 @@ type grpcServer struct {
 	impl Plugin
 }
 
-func (s *grpcServer) HealthCheck(ctx context.Context, _ *proto.HealthCheckRequest) (*proto.HealthCheckResponse, error) {
-	resp, err := s.impl.HealthCheck(ctx, &HealthCheckRequest{})
+func (s *grpcServer) Describe(ctx context.Context, _ *proto.DescribeRequest) (*proto.DescribeResponse, error) {
+	resp, err := s.impl.Describe(ctx, &DescribeRequest{})
 	if err != nil {
 		return nil, err
 	}
-	return &proto.HealthCheckResponse{
+	return &proto.DescribeResponse{
 		Healthy:                 resp.Healthy,
 		Version:                 resp.Version,
 		ErrorMessage:            resp.ErrorMessage,

@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/complytime/complyctl/internal/complytime"
@@ -20,18 +18,17 @@ import (
 type providersOptions struct {
 	*Common
 	pluginDir string
-	plain     bool
 }
 
-// See R46: specs/001-gemara-native-workflow/research.md
 func providersCmd(common *Common) *cobra.Command {
 	o := &providersOptions{
 		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:   "providers",
-		Short: "List discovered scanning providers and their health status",
-		Args:  cobra.NoArgs,
+		Use:               "providers",
+		Short:             "List discovered scanning providers and their health status",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := o.complete(); err != nil {
 				return err
@@ -39,7 +36,6 @@ func providersCmd(common *Common) *cobra.Command {
 			return o.run(cmd.Context())
 		},
 	}
-	cmd.Flags().BoolVarP(&o.plain, "plain", "", false, "print table with minimal formatting")
 	return cmd
 }
 
@@ -52,7 +48,6 @@ func (o *providersOptions) complete() error {
 	return nil
 }
 
-// See FR-032, R38, R46: specs/001-gemara-native-workflow/spec.md
 func (o *providersOptions) run(ctx context.Context) error {
 	mgr, err := plugin.NewManager(o.pluginDir, logFile)
 	if err != nil {
@@ -70,11 +65,11 @@ func (o *providersOptions) run(ctx context.Context) error {
 		return nil
 	}
 
-	rows := make([]table.Row, 0, len(plugins))
+	rows := make([][]string, 0, len(plugins))
 	for _, lp := range plugins {
 		status := "healthy"
 		version := ""
-		resp, err := lp.Client.HealthCheck(ctx, &plugin.HealthCheckRequest{})
+		resp, err := lp.Client.Describe(ctx, &plugin.DescribeRequest{})
 		if err != nil {
 			status = "ERROR"
 		} else if !resp.Healthy {
@@ -86,36 +81,12 @@ func (o *providersOptions) run(ctx context.Context) error {
 		if relErr != nil {
 			relPath = lp.Info.ExecutablePath
 		}
-		rows = append(rows, table.Row{
+		rows = append(rows, []string{
 			lp.Info.EvaluatorID, relPath, status, version,
 		})
 	}
 
-	columns := terminal.AutoColumnWidths([]table.Column{
-		{Title: "Evaluator ID"},
-		{Title: "Path"},
-		{Title: "Status"},
-		{Title: "Version"},
-	}, rows, 2)
-
-	if o.plain {
-		terminal.ShowPlainTable(os.Stdout, columns, rows)
-		return nil
-	}
-
-	tbl := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(min(7, len(rows)+2)),
-	)
-	tableStyle := table.DefaultStyles()
-	tableStyle.Header = tableStyle.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(false)
-	tbl.SetStyles(tableStyle)
-	fmt.Fprintln(os.Stdout, tbl.View())
+	headers := []string{"PROVIDER ID", "PATH", "STATUS", "VERSION"}
+	terminal.ShowPlainTable(os.Stdout, headers, rows)
 	return nil
 }

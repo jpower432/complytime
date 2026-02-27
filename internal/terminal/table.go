@@ -5,40 +5,41 @@ package terminal
 import (
 	"fmt"
 	"io"
+	"os"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 )
 
-// AutoColumnWidths returns a copy of columns with widths set to the maximum
-// display width (header or cell) plus padding. Uses lipgloss.Width to
-// correctly measure multi-byte characters like emoji.
-func AutoColumnWidths(columns []table.Column, rows []table.Row, padding int) []table.Column {
-	out := make([]table.Column, len(columns))
-	for i, col := range columns {
-		maxW := lipgloss.Width(col.Title)
-		for _, row := range rows {
-			if i < len(row) {
-				if w := lipgloss.Width(row[i]); w > maxW {
-					maxW = w
-				}
-			}
-		}
-		out[i] = table.Column{Title: col.Title, Width: maxW + padding}
-	}
-	return out
+// IsTTY returns true when stdout is an interactive terminal.
+func IsTTY() bool {
+	return term.IsTerminal(os.Stdout.Fd())
 }
 
 // ShowPlainTable renders a plain text formatted table to writer.
-func ShowPlainTable(writer io.Writer, columns []table.Column, rows []table.Row) {
-	for _, col := range columns {
-		_, _ = fmt.Fprintf(writer, "%-*s", col.Width, col.Title)
+func ShowPlainTable(w io.Writer, headers []string, rows [][]string) {
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h) + 2
 	}
-	_, _ = fmt.Fprintln(writer)
 	for _, row := range rows {
 		for i, cell := range row {
-			_, _ = fmt.Fprintf(writer, "%-*s", columns[i].Width, cell)
+			if i < len(widths) {
+				if cw := len(cell) + 2; cw > widths[i] {
+					widths[i] = cw
+				}
+			}
 		}
-		_, _ = fmt.Fprintln(writer)
+	}
+	for i, h := range headers {
+		_, _ = fmt.Fprintf(w, "%-*s", widths[i], h)
+	}
+	_, _ = fmt.Fprintln(w)
+	for _, row := range rows {
+		for i, cell := range row {
+			if i < len(widths) {
+				_, _ = fmt.Fprintf(w, "%-*s", widths[i], cell)
+			}
+		}
+		_, _ = fmt.Fprintln(w)
 	}
 }

@@ -125,11 +125,11 @@ complyctl doctor --verbose
    target[local]: profile ✅
 ```
 
-Exit 0 if all blocking checks pass. Policy staleness and registry unreachability are warnings (non-blocking). Missing required variables (declared by providers via HealthCheck) are blocking errors.
+Exit 0 if all blocking checks pass. Policy staleness and registry unreachability are warnings (non-blocking). Missing required variables (declared by providers via Describe) are blocking errors.
 
 **CI/CD path**: Commit `complytime.yaml` to the repo, then run `complyctl get` and `complyctl doctor` directly. Do not run `init`.
 
-**Troubleshooting**: Plugin-communicating commands (`generate`, `scan`, `providers`, `doctor`) write structured logs to `complyctl.log` in the working directory. The log file is truncated on each run (fresh log per invocation). Simple commands (`version`, `list`, `get`, `init`) do not create a log file.
+**Troubleshooting**: Plugin-communicating commands (`generate`, `scan`, `providers`, `doctor`) write structured logs to `.complytime/complyctl.log` in the workspace directory. The log file is truncated on each run (fresh log per invocation). Simple commands (`version`, `list`, `get`, `init`) do not create a log file.
 
 ### 4. Fetch/update policies
 
@@ -153,7 +153,13 @@ Synchronization completed.
 complyctl list
 ```
 
-Shows cached policies from the local policy cache.
+Shows cached policies from the local policy cache. Plain aligned text (Session 2026-02-26e).
+
+```text
+POLICY ID                      VERSION
+cis-fedora-l1-workstation      v1.0.0
+nist-800-53-r5                 v2.0.0
+```
 
 ### 6. Discover installed scanning providers
 
@@ -161,7 +167,12 @@ Shows cached policies from the local policy cache.
 complyctl providers
 ```
 
-Shows discovered scanning providers from `~/.complytime/providers/` — evaluator ID, path, health status, and version.
+Shows discovered scanning providers from `~/.complytime/providers/` — evaluator ID, path, health status, and version. Plain aligned text (Session 2026-02-26e).
+
+```text
+PROVIDER ID  PATH                            STATUS   VERSION
+openscap     complyctl-provider-openscap     healthy  1.2.0
+```
 
 ### 7. Generate policy artifacts (optional)
 
@@ -169,18 +180,16 @@ Shows discovered scanning providers from `~/.complytime/providers/` — evaluato
 complyctl generate --policy-id nist-800-53-r5
 ```
 
-Resolves dependency graph, preps scanning providers via Generate RPC, persists generated artifacts + policy digest, and outputs a tabular execution plan:
+Resolves dependency graph, preps scanning providers via Generate RPC, persists generated artifacts + policy digest, and outputs a structured plain-text execution plan (Session 2026-02-26e):
 
 ```text
 Execution Plan: nist-800-53-r5
 
-Evaluator Routing:
-  EVALUATOR        REQUIREMENTS  PLUGIN                                         STATUS
-  openscap         47            ~/.complytime/providers/complyctl-provider-openscap  healthy
+  Target: production-cluster
+    Provider: openscap (✅ healthy)
+    Requirements: 47
 
-Target Scope:
-  TARGET              POLICY           EVALUATORS
-  production-cluster  nist-800-53-r5   openscap
+Generation completed.
 ```
 
 **Note:** `generate` validates that required global variables are present in `complytime.yaml` before dispatching to scanning providers. Missing variables produce a clear error:
@@ -199,9 +208,6 @@ This step is **optional** for simple workflows — `scan` auto-generates when ne
 # Simple: auto-generates if needed, scans, produces EvaluationLog
 complyctl scan --policy-id nist-800-53-r5
 
-# Pre-flight check: generate + show execution plan, don't scan
-complyctl scan --policy-id nist-800-53-r5 --dry-run
-
 # OSCAL output
 complyctl scan --policy-id nist-800-53-r5 --format oscal
 
@@ -217,24 +223,44 @@ complyctl scan --policy-id nist-800-53-r5 --format sarif
 - **Fresh artifacts** (policy unchanged since last generate): reuses — skips Generate RPC
 - **Stale artifacts** (policy updated via `get`): warns and auto-regenerates
 
-After scan completes, a summary is always displayed in the terminal (regardless of `--format`):
+After scan completes, a report-style summary is always displayed in the terminal (regardless of `--format`). Non-passing results shown in a 4-column plain text table. Totals line, EvaluationLog path, and formatted report path (when applicable) in conclusion (Session 2026-02-26e):
 
 ```text
-Scanning 47 requirements via openscap for target(s): production-cluster...
+Scan: nist-800-53-r5 | Target: production-cluster | 47 requirements
 
-❌ SSH service must be configured with approved ciphers only
-❌ Password hashing algorithm must use SHA512
-⚠️ Failed to evaluate: openscap returned timeout for audit log rotation check
-⏭️ Skipped: SELinux rule not applicable to target configuration
+REQUIREMENT ID      CONTROL ID        STATUS  MESSAGE
+xccdf_req_ssh_cip   ssh_ciphers       ❌      SSH service must be configured with approved ciphers
+xccdf_req_pw_hash   pw_hashing        ❌      Password hashing algorithm must use SHA512
+xccdf_req_audit     audit_log_rotate  ⚠️      openscap returned timeout for audit log rotation
+xccdf_req_selinux   selinux_rule      ⏭️      SELinux rule not applicable to target configuration
 
-┌──────────┬──────────┬──────────┬──────────┐
-│ 44 ✅    │ 2 ❌     │ 1 ⏭️     │ 1 ⚠️     │
-└──────────┴──────────┴──────────┴──────────┘
-
-Evaluation log written: ./.complytime/scan/evaluation-log.yaml
+48 requirements: 44 passed, 2 failed, 1 error, 1 skipped
+Evaluation log: .complytime/scan/evaluation-log.yaml
 ```
 
-Only non-passing results are listed. Each line shows emoji + message explaining what went wrong (sourced from scanning provider's `AssessmentLog.Steps[].Message`). Passed results appear in the totals row only.
+With `--format`:
+
+```bash
+complyctl scan --policy-id nist-800-53-r5 --format oscal
+```
+
+```text
+Scan: nist-800-53-r5 | Target: production-cluster | 47 requirements
+
+REQUIREMENT ID      CONTROL ID        STATUS  MESSAGE
+xccdf_req_ssh_cip   ssh_ciphers       ❌      SSH service must be configured with approved ciphers
+xccdf_req_pw_hash   pw_hashing        ❌      Password hashing algorithm must use SHA512
+
+47 requirements: 44 passed, 2 failed, 0 error, 0 skipped
+Evaluation log: .complytime/scan/evaluation-log.yaml
+OSCAL report written: ./oscal-assessment-results.json
+```
+
+**Output locations (R58)**:
+- EvaluationLog (always): `.complytime/scan/` — diagnostic artifact, hidden directory
+- Formatted reports (`--format`): current working directory — user-facing deliverables
+
+Only non-passing results appear in the table. Passed results appear in the totals line only. Table shows Requirement ID + Control ID for identification, Status emoji for severity, and Message for actionability (sourced from scanning provider's `AssessmentLog.Steps[].Message`). Falls back to plain text when output is piped (R59).
 
 ## Scanning Provider Development
 
@@ -251,13 +277,13 @@ Scanning providers are standalone executables discovered from `~/.complytime/pro
 ```
 
 **Scanning interface methods (gRPC):**
-- `HealthCheck(HealthCheckRequest) → HealthCheckResponse` — reports health, version, and required variable names (R51). Doctor validates declared variable names against workspace config.
+- `Describe(DescribeRequest) → DescribeResponse` — reports health, version, and required variable names (R51). Doctor validates declared variable names against workspace config.
 - `Generate(GenerateRequest) → GenerateResponse` — preps declarative policies. Receives global variables (workspace-scoped config) + test variables (per-requirement parameters from Gemara policy). Called during `complyctl generate` or auto-generate within `scan`.
 - `Scan(ScanRequest) → ScanResponse` — executes compliance checks against targets. Receives targets only (target ID + target variables). No requirement_ids — provider evaluates all requirements from Generate-time state. Returns `ConfidenceLevel` enum per requirement.
 
 **Three-tier variable model:**
 - **Global variables** (Generate RPC): Workspace-scoped config from top-level `variables` in `complytime.yaml` (e.g., scan output directory). Applies to all policies and targets.
-- **Target variables** (Scan RPC): Per-target runtime config from `targets[].variables` (e.g., profile, kubeconfig, auth tokens). Owned by system admin. Declare required variable *names* in `HealthCheckResponse.required_target_variables` (R51) — doctor validates them. Document valid *values* in your provider README.
+- **Target variables** (Scan RPC): Per-target runtime config from `targets[].variables` (e.g., profile, kubeconfig, auth tokens). Owned by system admin. Declare required variable *names* in `DescribeResponse.required_target_variables` (R51) — doctor validates them. Document valid *values* in your provider README.
 - **Test variables** (Generate RPC): Per-requirement parameters from Gemara policy assessment plan (e.g., password hashing algorithm). Owned by policy author. Policy-defined defaults used directly — no admin overrides.
 
 **Go scanning provider example (main.go):**
@@ -275,8 +301,8 @@ var _ plugin.Plugin = (*myProvider)(nil)
 
 type myProvider struct{}
 
-func (p *myProvider) HealthCheck(_ context.Context, _ *plugin.HealthCheckRequest) (*plugin.HealthCheckResponse, error) {
-    return &plugin.HealthCheckResponse{
+func (p *myProvider) Describe(_ context.Context, _ *plugin.DescribeRequest) (*plugin.DescribeResponse, error) {
+    return &plugin.DescribeResponse{
         Healthy: true,
         Version: "1.0.0",
         RequiredGlobalVariables: []string{"workspace"},
@@ -297,7 +323,7 @@ func main() {
 
 ## Terminal Output
 
-complyctl uses a two-tier output model. Only plugin-communicating commands create a log file (`complyctl.log`, truncated per run). go-plugin output is filtered to WARN and above in the log file.
+complyctl uses a two-tier output model. Only plugin-communicating commands create a log file (`.complytime/complyctl.log`, truncated per run). go-plugin output is filtered to WARN and above in the log file.
 
 | Tier | Commands | Terminal Output | Log File | Channel |
 |:---|:---|:---|:---|:---|
@@ -341,10 +367,10 @@ See `docs/COMPLY_PACK_QUICKSTART.md` for the pack design document.
 |:---|:---|
 | `init` | Create `complytime.yaml` — prompts for PolicyEntry URLs + optional IDs + targets (Session 2026-02-25d) |
 | `get` | Fetch/sync policies from OCI registry (per-registry clients from PolicyEntry URLs) |
-| `list` | List cached policies (shows effective IDs, versions, cache status) |
-| `providers` | List discovered scanning providers (evaluator ID, path, health, version) |
+| `list` | List cached policies (effective IDs + versions, plain text) |
+| `providers` | List discovered scanning providers (evaluator ID, path, health, version; plain text) |
 | `generate` | Resolve policy graph, prep scanning providers, persist artifacts, output execution plan |
 | `scan` | Execute compliance scan (auto-generates if needed), display summary, produce reports |
-| `scan --dry-run` | Generate + show execution plan without scanning |
+| ~~`scan --dry-run`~~ | ~~Generate + show execution plan without scanning~~ (removed Session 2026-02-26e — use `generate` for plan preview) |
 | `doctor` | Pre-flight diagnostics: config + providers + per-policy version comparison + per-provider config summary + variable validation. `--verbose` for key detail (requires policy cache) |
 | `version` | Print complyctl version |

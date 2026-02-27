@@ -30,6 +30,10 @@ const (
 
 const ScanOutputDir = "scan"
 
+// LogFileName is the log file name written to {WorkspaceDir}/{LogFileName}.
+// See FR-038, R57: specs/001-gemara-native-workflow/research.md
+const LogFileName = "complyctl.log"
+
 // DefaultCommandTimeout is the default deadline for scan and generate operations.
 // Individual plugin RPCs may use a shorter per-call timeout as a safety net.
 const DefaultCommandTimeout = 5 * time.Minute

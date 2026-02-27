@@ -1,6 +1,6 @@
 # Data Model: Gemara-Native Decoupled Workflow
 
-**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-25d)
+**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-26d)
 
 ## Entities
 
@@ -56,7 +56,7 @@ Replaced by `PolicyEntry`. The separate `id` + `version` fields are now a single
 | `policies` | `[]string` | Yes (>=1) | Policy effective IDs applicable to this target (Session 2026-02-25d; was `policy_ids`) |
 | `variables` | `map[string]string` | No | Target variables — per-target runtime config (credentials, profile, kubeconfig) (R48) |
 
-**Target variables (R48)**: `variables` contains per-target runtime configuration owned by the system admin. These define *how* to reach the target and *how* to configure the scan for this target (e.g., `profile: cis_workstation_l1`, `kubeconfig: /path/to/kubeconfig`). Passed to scanning providers via `Target.variables` in Scan RPC. Providers declare required variable *names* via `HealthCheckResponse.required_target_variables` (R51); `complyctl doctor` validates these keys exist. Documentation of valid *values* remains out-of-band (provider README).
+**Target variables (R48)**: `variables` contains per-target runtime configuration owned by the system admin. These define *how* to reach the target and *how* to configure the scan for this target (e.g., `profile: cis_workstation_l1`, `kubeconfig: /path/to/kubeconfig`). Passed to scanning providers via `Target.variables` in Scan RPC. Providers declare required variable *names* via `DescribeResponse.required_target_variables` (R51); `complyctl doctor` validates these keys exist. Documentation of valid *values* remains out-of-band (provider README).
 
 **Validation rules**:
 - No duplicate target IDs
@@ -171,34 +171,28 @@ Tracks the policy cache digest at generation time for freshness detection (R37).
 **Source**: `internal/policy/generation_state.go` — `GenerationState`, `SaveState()`, `LoadState()`, `IsFresh(currentDigest)`
 **File path**: `{workspace}/.complytime/generation/{policy-id}.json` — one file per policy, mirrors cache layout. Directory created on first generate.
 **Freshness check**: Compare `policy_digest` against `PolicyState.digest` from `state.json`. Match → fresh (reuse). Mismatch → stale (warn + regenerate).
-**Dry-run persistence**: `scan --dry-run` persists `GenerationState` after invoking Generate RPC. The plugin already created artifacts as side effects; persisting state ensures a subsequent `scan` reuses them rather than regenerating. "Dry" means "don't execute Scan RPC," not "don't generate."
+**~~Dry-run persistence~~**: ~~`scan --dry-run` persists `GenerationState`~~ (removed Session 2026-02-26e — `--dry-run` dropped; `generate` is the only execution plan preview). `generate` persists `GenerationState` after invoking Generate RPC. Plugins create artifacts as side effects; persisting state ensures a subsequent `scan` reuses them.
 
 ---
 
-### ExecutionPlan (output of `complyctl generate` / `scan --dry-run`)
+### ExecutionPlan (output of `complyctl generate`)
 
-Tabular pre-flight summary output after graph resolution and plugin preparation (R34, R36, FR-033).
+Structured plain-text execution plan output after graph resolution and plugin preparation (FR-007, Session 2026-02-26e). ~~`scan --dry-run` removed~~ (Session 2026-02-26e).
 
-**EvaluatorRoute** (one row per evaluator):
-
-| Field | Type | Description |
-|:---|:---|:---|
-| `evaluator_id` | `string` | Evaluator identifier from assessment plan |
-| `requirement_count` | `int` | Number of requirements routed to this evaluator |
-| `plugin_path` | `string` | Matched plugin executable path (empty if not found) |
-| `status` | `string` | `healthy`, `unhealthy`, or `ERROR` (no matching plugin) |
-
-**TargetScope** (one row per target):
+**ExecutionPlanRow** (one stanza per target-provider combination):
 
 | Field | Type | Description |
 |:---|:---|:---|
 | `target_id` | `string` | Target identifier from workspace config |
-| `policy_id` | `string` | Policy ID being evaluated |
-| `evaluator_ids` | `[]string` | Evaluator IDs in scope for this target |
+| `provider_id` | `string` | Evaluator/provider identifier from assessment plan |
+| `requirement_count` | `int` | Number of requirements routed to this provider for this target |
+| `status` | `string` | `healthy`, `unhealthy`, or `ERROR` (no matching plugin) |
 
 **Source**: `internal/output/execution_plan.go` — `FormatExecutionPlan()`
-**Consumer**: `cmd/complyctl/cli/generate.go` and `cmd/complyctl/cli/scan.go` (`--dry-run`) — printed to stdout after graph resolution
-**Rendering (R38)**: Both tables use `charmbracelet/bubbles/table` + `lipgloss` via `internal/terminal`. Two separate styled tables, each with a header label. No `--plain` flag — execution plan is styled-only.
+**Consumer**: `cmd/complyctl/cli/generate.go` — printed to stdout after graph resolution
+**Rendering (Session 2026-02-26e)**: Structured plain-text block with indented labeled lines. Intro line with policy ID, one indented stanza per target-provider pair (Provider, Requirements count, Status), conclusion line. Uses `fmt.Fprintf` with alignment — no lipgloss, no table. Supersedes R59 lipgloss table design.
+
+**~~EvaluatorRoute~~** and **~~TargetScope~~**: Removed (Session 2026-02-26d). Merged into `ExecutionPlanRow`.
 
 ---
 
@@ -211,8 +205,8 @@ Discovered gRPC scanning provider with lifecycle management. No sidecar manifest
 | `plugin_id` | `string` | Derived from executable name |
 | `evaluator_id` | `string` | `plugin_id` minus `complyctl-provider-` prefix |
 | `path` | `string` | Filesystem path to executable |
-| `healthy` | `bool` | HealthCheck result |
-| `version` | `string` | Reported by HealthCheck RPC |
+| `healthy` | `bool` | Describe result |
+| `version` | `string` | Reported by Describe RPC |
 | `required_global_variables` | `[]string` | Global variable names declared by provider (R51). Empty = no requirements |
 | `required_target_variables` | `[]string` | Target variable names declared by provider (R51). Empty = no requirements |
 | `client` | `PluginClient` | gRPC client interface |
@@ -244,37 +238,41 @@ Gemara Layer 4 output — always produced on scan. Uses `go-gemara` `EvaluationL
 Each `AssessmentLog` within a `ControlEvaluation` contains `requirement` (`EntryMapping` with `EntryId` = requirement ID, `ReferenceId` = policy ID), `steps`, `result`, `confidence`, and `message`.
 
 **Source**: `internal/output/evaluator.go` — builds `*gemara.EvaluationLog` using `gemara.ControlEvaluation` and `gemara.AssessmentLog`
-**File path**: `{workspace}/{ScanOutputDir}/evaluation-log.yaml` where `ScanOutputDir = ".complytime/scan"` (constant from `internal/complytime/consts.go`, R42)
+**File path**: `{workspace}/{WorkspaceDir}/{ScanOutputDir}/evaluation-log.yaml` — always written to hidden directory (diagnostic artifact). Path always printed to terminal regardless of `--format` (R58). Formatted reports (`--format oscal|pretty|sarif`) are written to CWD (user-facing deliverables, R58).
 **Format**: YAML (serialized via `goccy/go-yaml`)
 
 ### ScanSummary (terminal output)
 
-Post-scan ActionError-style output displayed in the terminal after every scan (FR-037, R45). Not persisted to file — terminal output only. Replaces previous multi-row charmbracelet table design (R43).
+Post-scan report-style output displayed in the terminal after every scan (FR-037). Not persisted to file — terminal output only.
 
-**Design**: Only non-passing results are listed individually. Each non-passing result is a standalone line: emoji + log message (no requirement ID). Passed results appear in the totals row only. Below the lines, a single-row charmbracelet totals table summarizes counts for all statuses.
+**Design (Session 2026-02-26e)**: Report-style layout: (1) intro text (policy ID, target(s), total requirement count), (2) plain aligned text table of non-passing results with 4 columns, (3) conclusion text (compact inline totals, EvaluationLog path, formatted report path when `--format` specified). Passed results appear in the totals line only — not in the table. All rendering via `ShowPlainTable` — lipgloss removed.
 
-**ScanSummaryEntry** (one entry per non-passing result):
+**ScanSummaryEntry** (one row per non-passing result):
 
 | Field | Type | Description |
 |:---|:---|:---|
+| `requirement_id` | `string` | Requirement identifier from `AssessmentLog.RequirementId` |
+| `control_id` | `string` | Control identifier resolved via `reqToControl` map |
 | `result` | `Result` (enum) | Aggregated assessment outcome (failed, skipped, error only) |
 | `status_emoji` | `string` | Emoji indicator: ❌, ⏭️, ⚠️ (from `consts.StatusFailed`, etc.) |
 | `message` | `string` | From `AssessmentLog.Steps[].Message` — the step whose result matches the aggregated outcome (first match) |
+
+**Table columns**: `Requirement ID`, `Control ID`, `Status` (emoji), `Message`.
 
 **Result aggregation**: Delegates to go-gemara's built-in results aggregation function. No custom `aggregateResultFromSteps()` in complyctl.
 
 **Message source**: Scanning provider's `AssessmentLog.Steps[].Message` field directly. Provider authors control failure text. No requirement title substitution.
 
-**Sort order**: Non-passing lines ordered by severity: ❌ failed (1) → ⚠️ error (2) → ⏭️ skipped (3). Passed results not listed individually.
+**Sort order**: Non-passing rows ordered by severity: ❌ failed (1) → ⚠️ error (2) → ⏭️ skipped (3). Passed results not listed individually.
 
-**Totals table**: Single-row charmbracelet table below the non-passing lines: `| N ✅ | N ❌ | N ⏭️ | N ⚠️ |`. Includes passed count.
+**Totals line**: Compact inline below the table: `44 ✅  3 ❌  2 ⏭️  1 ⚠️`. Includes passed count.
 
-**Source**: `internal/output/scan_summary.go` — `FormatScanSummary()`
-**Consumer**: `cmd/complyctl/cli/scan.go` — printed to stdout after `eval.Write()` and before formatted report output
-**Rendering**: Individual lines via `fmt.Fprintf`. Totals table uses `charmbracelet/bubbles/table` + `lipgloss` via `internal/terminal`.
+**Source**: `internal/output/scan_summary.go` — `FormatScanSummary(assessments, reqToControl, policyID, targetIDs)`
+**Consumer**: `cmd/complyctl/cli/scan.go` — printed to stdout after `eval.Write()`. EvaluationLog path included in conclusion text. Formatted report path included when `--format` is specified (report in CWD, R58).
+**Rendering (Session 2026-02-26e)**: Plain aligned text table via `ShowPlainTable` in all contexts (TTY and non-TTY). Lipgloss removed. No `--pretty` flag.
 
 **Constants** (from `internal/complytime/consts.go`, R42, R43):
-- `ScanOutputDir = ".complytime/scan"` — scan output directory name
+- `ScanOutputDir = "scan"` — scan output subdirectory name
 - `StatusPassed = "✅"` — passed emoji
 - `StatusFailed = "❌"` — failed emoji
 - `StatusSkipped = "⏭️"` — skipped emoji
@@ -290,7 +288,7 @@ Pre-flight diagnostics output from `complyctl doctor` (FR-039, R44, R55). Not pe
 
 | Field | Type | Description |
 |:---|:---|:---|
-| `name` | `string` | Check identifier (e.g., `config`, `provider/{id}`, `policy/{id}`, `registry/{host}`, `variables/{id}`). Config check includes structural validation + target-policy cross-references (R50). Policy checks compare cached vs. remote version (R55). Variables checks validate HealthCheck-declared `required_global_variables` against `config.variables` and `required_target_variables` against relevant `config.targets[].variables` using policy → evaluator → target mapping from cache (R51, R52) |
+| `name` | `string` | Check identifier (e.g., `config`, `provider/{id}`, `policy/{id}`, `registry/{host}`, `variables/{id}`). Config check includes structural validation + target-policy cross-references (R50). Policy checks compare cached vs. remote version (R55). Variables checks validate Describe-declared `required_global_variables` against `config.variables` and `required_target_variables` against relevant `config.targets[].variables` using policy → evaluator → target mapping from cache (R51, R52) |
 | `status` | `CheckStatus` (enum) | `pass`, `fail`, `warn` |
 | `message` | `string` | Human-readable result (e.g., `complytime.yaml valid`, `v1.0.0 (latest)`, `cached v1.0.0, available v1.1.0`) |
 | `blocking` | `bool` | Whether failure blocks exit code 0 |
@@ -308,7 +306,7 @@ Pre-flight diagnostics output from `complyctl doctor` (FR-039, R44, R55). Not pe
 | Check | Name Pattern | Blocking | Pass | Warn | Fail |
 |:---|:---|:---|:---|:---|:---|
 | Config | `config` | Yes | `complytime.yaml valid` | — | `config not found` / `validation failed` |
-| Provider health | `provider/{id}` | Yes | `healthy (v1.2.0)` | — | `unhealthy` / `HealthCheck failed` |
+| Provider health | `provider/{id}` | Yes | `healthy (v1.2.0)` | — | `unhealthy` / `Describe failed` |
 | Policy version | `policy/{id}` | No | `v1.0.0 (latest)` | `cached v1.0.0, available v1.1.0 — run complyctl get` | — |
 | Registry reachability | `registry/{host}` | No | — | `unreachable — version check skipped` | — |
 | Variables (default) | `variables/{id}` | Yes | `3/3 global vars, 2/2 target vars` | — | `2/3 global vars — missing workspace` |
@@ -381,7 +379,7 @@ complyctl providers ──→ ScanningProvider[] (discovery from ~/.complytime/p
 complyctl doctor ──→ DoctorResult (config + target-policy cross-refs + providers
                      + per-policy version comparison: cached vs remote latest (R55)
                      + per-provider config summary: resolved/missing counts (R55)
-                     + HealthCheck-declared variable validation via policy→evaluator→target mapping (R51)
+                     + Describe-declared variable validation via policy→evaluator→target mapping (R51)
                      + --verbose expands per-provider variable key detail (R55))
                      UniqueRegistries() extracts distinct registries for version queries
                      Requires policy cache (R52) — errors if cache missing
@@ -402,15 +400,15 @@ complyctl scan ──→ check GenerationState.IsFresh()
                     └── missing → auto-generate
                   ──→ brief summary line (FR-034)
                   ──→ Scan RPC (targets only — R47) ──→ AssessmentLog[] ──→ EvaluationLog
-                  ──→ ScanSummary (ActionError-style: emoji + message per failure, totals table, FR-037, R45)
+                  ──→ ScanSummary (report-style: intro → 4-col plain table → totals + paths, FR-037)
 
-complyctl scan --dry-run ──→ auto-generate ──→ ExecutionPlan (stdout) ──→ exit
+[scan --dry-run removed Session 2026-02-26e — use complyctl generate for plan preview]
 
 ScanningProvider ──(Generate RPC: global + test vars)──→ configured state
-                 ──(Scan RPC: targets only)──→ AssessmentLog[] ──→ EvaluationLog
-                                               ├── OSCAL (--format oscal)
-                                               ├── Markdown (--format pretty)
-                                               └── SARIF (--format sarif)
+                 ──(Scan RPC: targets only)──→ AssessmentLog[] ──→ EvaluationLog (.complytime/scan/, R58)
+                                               ├── OSCAL (--format oscal → CWD, R58)
+                                               ├── Markdown (--format pretty → CWD, R58)
+                                               └── SARIF (--format sarif → CWD, R58)
 
 PackManifest (types in 001 data model only; ALL CLI deferred to 002; R53)
   ├── 1:1 PlatformConfig
@@ -499,5 +497,5 @@ Pack manifest file (YAML). Declares what a comply-pack contains — developer-ow
 [Results Collected] ──(format)──→ [Report Written]
 [Plugin fails] ──→ [Requirements marked as error, continue with remaining]
 [Evaluator ID not found] ──→ [Error: unmatched evaluator, list available plugins]
-[complyctl scan --dry-run] ──→ [Generate phase only] ──→ [Execution Plan Displayed, exit]
+[scan --dry-run removed Session 2026-02-26e — use complyctl generate for plan preview]
 ```

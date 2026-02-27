@@ -21,9 +21,9 @@ service Plugin {
   // Called during `complyctl scan` command execution
   rpc Scan(ScanRequest) returns (ScanResponse);
 
-  // HealthCheck verifies plugin availability and compatibility
-  // Called during plugin discovery
-  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  // Describe reports plugin identity, health, and declared variable
+  // requirements. Called during plugin discovery and doctor diagnostics.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
 }
 
 // GenerateRequest contains assessment plan configuration for policy preparation
@@ -126,13 +126,14 @@ enum Result {
   RESULT_ERROR = 4;
 }
 
-// HealthCheckRequest verifies plugin availability
-message HealthCheckRequest {
+// DescribeRequest is sent to discover plugin identity and requirements.
+message DescribeRequest {
   // Empty - no parameters needed
 }
 
-// HealthCheckResponse indicates plugin health status
-message HealthCheckResponse {
+// DescribeResponse reports plugin identity, health, and declared variable
+// requirements used by doctor diagnostics.
+message DescribeResponse {
   // Health status
   bool healthy = 1;
 

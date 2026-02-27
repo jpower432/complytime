@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -30,30 +31,30 @@ func generateCmd(common *Common) *cobra.Command {
 		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:     "generate [flags]",
-		Short:   "Generate policy graph and invoke plugins",
+		Use:   "generate [flags]",
+		Short: "Generate policy graph and invoke plugins",
 		Example: `complyctl generate --policy-id nist-800-53-r5`,
-		Args:    cobra.NoArgs,
+		SilenceUsage:      true,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := o.validate(); err != nil {
-				return err
-			}
 			if err := o.complete(); err != nil {
 				return err
 			}
 			return o.run(cmd.Context())
 		},
 	}
-	cmd.Flags().StringVarP(&o.policyID, "policy-id", "p", "", "Policy ID to generate (required)")
+	cmd.Flags().StringVarP(&o.policyID, "policy-id", "p", "", "Policy ID to generate (see complyctl list)")
 	cmd.Flags().DurationVarP(&o.timeout, "timeout", "t", complytime.DefaultCommandTimeout, "Maximum time for the generate operation (e.g. 5m, 10m, 1h)")
-	return cmd
-}
-
-func (o *generateOptions) validate() error {
-	if o.policyID == "" {
-		return fmt.Errorf("policy-id is required")
+	if err := cmd.MarkFlagRequired("policy-id"); err != nil {
+		logger.Error("Failed to mark policy-id as required", "error", err)
 	}
-	return nil
+	if err := cmd.RegisterFlagCompletionFunc("policy-id", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}); err != nil {
+		logger.Error("Failed to register policy-id completion", "error", err)
+	}
+	return cmd
 }
 
 func (o *generateOptions) complete() error {
@@ -75,7 +76,7 @@ func (o *generateOptions) run(ctx context.Context) error {
 
 	ws := complytime.NewWorkspace()
 	if err := ws.LoadAndValidate(); err != nil {
-		return fmt.Errorf("failed to load complytime: %w", err)
+		return fmt.Errorf("failed to load workspace config: %w", err)
 	}
 
 	cfg := ws.Config()
@@ -86,7 +87,7 @@ func (o *generateOptions) run(ctx context.Context) error {
 
 	entry, found := complytime.FindPolicy(cfg.Policies, o.policyID)
 	if !found {
-		return fmt.Errorf("policy %s not found in config", o.policyID)
+		return fmt.Errorf("policy %q not found in config — run complyctl list to see available policy IDs", o.policyID)
 	}
 	ref := complytime.ParsePolicyRef(entry.URL)
 
@@ -94,7 +95,7 @@ func (o *generateOptions) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("Resolved policy version", "policy", ref.Repository, "version", version)
+	fmt.Fprintf(os.Stderr, "Resolved %s version: %s\n", ref.Repository, version)
 
 	graph, err := resolver.ResolvePolicyGraph(ref.Repository, version)
 	if err != nil {
@@ -113,18 +114,13 @@ func (o *generateOptions) run(ctx context.Context) error {
 
 	plugins := mgr.ListPlugins()
 	if len(plugins) == 0 {
-		logger.Warn("No plugins found", "plugin_dir", o.pluginDir)
-		return nil
+		return fmt.Errorf("no plugins found in %s (Describe may have failed)", o.pluginDir)
 	}
 
 	configs := policy.ExtractAssessmentConfigs(ref.Repository, graph)
 
 	groups := policy.GroupByEvaluator(configs, graph)
-
 	globalVars := cfg.Variables
-	if err := policy.ValidateGlobalVars(groups, globalVars, ws.Path()); err != nil {
-		return err
-	}
 
 	eid := entry.EffectiveID()
 	var policyTargets []complytime.TargetConfig
@@ -140,7 +136,7 @@ func (o *generateOptions) run(ctx context.Context) error {
 	spin.Start()
 
 	var evaluatorIDs []string
-	var routes []output.EvaluatorRoute
+	var planRows []output.ExecutionPlanRow
 	for evalID, group := range groups {
 		for _, target := range policyTargets {
 			if err := mgr.RouteGenerate(ctx, evalID, globalVars, target.Variables, group.Configs); err != nil {
@@ -150,29 +146,22 @@ func (o *generateOptions) run(ctx context.Context) error {
 		}
 		evaluatorIDs = append(evaluatorIDs, evalID)
 
-		route := output.EvaluatorRoute{
-			EvaluatorID:      evalID,
-			RequirementCount: len(group.Configs),
-			Status:           "healthy",
+		status := "healthy"
+		if _, lookupErr := mgr.GetPlugin(evalID); lookupErr != nil {
+			status = "ERROR"
 		}
-		if lp, lookupErr := mgr.GetPlugin(evalID); lookupErr == nil {
-			route.PluginPath = lp.Info.ExecutablePath
-		} else {
-			route.Status = "ERROR"
+
+		for _, target := range policyTargets {
+			planRows = append(planRows, output.ExecutionPlanRow{
+				TargetID:         target.ID,
+				ProviderID:       evalID,
+				RequirementCount: len(group.Configs),
+				Status:           status,
+			})
 		}
-		routes = append(routes, route)
 	}
 
 	spin.Stop()
-
-	var scopes []output.TargetScope
-	for _, t := range policyTargets {
-		scopes = append(scopes, output.TargetScope{
-			TargetID:     t.ID,
-			PolicyID:     ref.Repository,
-			EvaluatorIDs: evaluatorIDs,
-		})
-	}
 
 	cacheState, err := cache.LoadState(o.cacheDir)
 	if err != nil {
@@ -184,9 +173,6 @@ func (o *generateOptions) run(ctx context.Context) error {
 		return fmt.Errorf("failed to save generation state: %w", err)
 	}
 
-	fmt.Print(output.FormatExecutionPlan(ref.Repository, routes, scopes))
-
-	logger.Info("Gemara policy generation completed", "policy", ref.Repository)
-	fmt.Println("\nGeneration completed.")
+	fmt.Print(output.FormatExecutionPlan(eid, planRows))
 	return nil
 }

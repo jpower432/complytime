@@ -70,7 +70,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 
 	// Step 2: list
 	t.Run("list", func(t *testing.T) {
-		out := runComplytime(t, binary, workDir, env, "list", "--plain")
+		out := runComplytime(t, binary, workDir, env, "list")
 		t.Log(out)
 		assert.Contains(t, out, testPolicyID)
 	})
@@ -92,11 +92,11 @@ func TestE2E_FullWorkflow(t *testing.T) {
 		out := runComplytime(t, binary, scanDir, env,
 			"scan", "--policy-id", testPolicyID, "--format", "oscal")
 		t.Log(out)
-		assert.Contains(t, out, "Scan completed.")
+		assert.Contains(t, out, "requirements:")
 
-		outDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
-		assertOutputFile(t, outDir, "evaluation-log-", ".yaml")
-		oscalFile := assertOutputFile(t, outDir, "assessment-results-", ".json")
+		evalDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
+		assertOutputFile(t, evalDir, "evaluation-log-", ".yaml")
+		oscalFile := assertOutputFile(t, scanDir, "assessment-results-", ".json")
 
 		data, err := os.ReadFile(oscalFile)
 		require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestE2E_FullWorkflow(t *testing.T) {
 		assert.Contains(t, ar, "results")
 
 		meta := ar["metadata"].(map[string]interface{})
-		assert.Equal(t, "1.2.0", meta["oscal-version"])
+		assert.Equal(t, "1.1.3", meta["oscal-version"])
 	})
 
 	// Step 5: scan --format pretty
@@ -121,11 +121,11 @@ func TestE2E_FullWorkflow(t *testing.T) {
 		out := runComplytime(t, binary, scanDir, env,
 			"scan", "--policy-id", testPolicyID, "--format", "pretty")
 		t.Log(out)
-		assert.Contains(t, out, "Scan completed.")
+		assert.Contains(t, out, "requirements:")
 
-		outDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
-		assertOutputFile(t, outDir, "evaluation-log-", ".yaml")
-		mdFile := assertOutputFile(t, outDir, "report-", ".md")
+		evalDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
+		assertOutputFile(t, evalDir, "evaluation-log-", ".yaml")
+		mdFile := assertOutputFile(t, scanDir, "report-", ".md")
 
 		data, err := os.ReadFile(mdFile)
 		require.NoError(t, err)
@@ -142,11 +142,11 @@ func TestE2E_FullWorkflow(t *testing.T) {
 		out := runComplytime(t, binary, scanDir, env,
 			"scan", "--policy-id", testPolicyID, "--format", "sarif")
 		t.Log(out)
-		assert.Contains(t, out, "Scan completed.")
+		assert.Contains(t, out, "requirements:")
 
-		outDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
-		assertOutputFile(t, outDir, "evaluation-log-", ".yaml")
-		sarifFile := assertOutputFile(t, outDir, "scan-", ".json")
+		evalDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
+		assertOutputFile(t, evalDir, "evaluation-log-", ".yaml")
+		sarifFile := assertOutputFile(t, scanDir, "scan-", ".json")
 
 		data, err := os.ReadFile(sarifFile)
 		require.NoError(t, err)
@@ -219,7 +219,7 @@ targets:
 	t.Log(out)
 	assert.Contains(t, out, "Synchronization completed.")
 
-	listOut := runComplytime(t, binary, workDir, env, "list", "--plain")
+	listOut := runComplytime(t, binary, workDir, env, "list")
 	t.Log(listOut)
 	assert.Contains(t, listOut, "nist-800-53-r5")
 	assert.Contains(t, listOut, "cis-benchmark")
@@ -249,7 +249,7 @@ func TestE2E_ScanDefaultFormat(t *testing.T) {
 	out := runComplytime(t, binary, workDir, env,
 		"scan", "--policy-id", testPolicyID)
 	t.Log(out)
-	assert.Contains(t, out, "Scan completed.")
+	assert.Contains(t, out, "requirements:")
 
 	outDir := filepath.Join(workDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
 	assertOutputFile(t, outDir, "evaluation-log-", ".yaml")
@@ -381,8 +381,8 @@ func TestE2E_MockRegistryOCICompliance(t *testing.T) {
 	})
 }
 
-// TestE2E_MockPluginHealthCheck verifies the test plugin binary responds to health checks.
-func TestE2E_MockPluginHealthCheck(t *testing.T) {
+// TestE2E_MockPluginDescribe verifies the test plugin binary responds to Describe.
+func TestE2E_MockPluginDescribe(t *testing.T) {
 	binary := locateBinary(t)
 	srv := startMockRegistry(t)
 	defer srv.Close()
@@ -396,13 +396,13 @@ func TestE2E_MockPluginHealthCheck(t *testing.T) {
 	// Fetch policy first so generate has content
 	runComplytime(t, binary, workDir, env, "get")
 
-	// Generate dispatches to the test plugin via HealthCheck + Generate RPCs
+	// Generate dispatches to the test plugin via Describe + Generate RPCs
 	out := runComplytime(t, binary, workDir, env,
 		"generate", "--policy-id", testPolicyID)
 	t.Log(out)
 	assert.Contains(t, out, "Generation completed.")
-	assert.NotContains(t, out, "HealthCheck failed",
-		"test plugin must pass health check")
+	assert.NotContains(t, out, "Describe failed",
+		"test plugin must pass describe")
 }
 
 // TestE2E_Help verifies basic help output structure.
@@ -462,7 +462,7 @@ func TestE2E_NestedPolicyID(t *testing.T) {
 
 	// list — must not say "(not cached)"
 	t.Run("list", func(t *testing.T) {
-		out := runComplytime(t, binary, workDir, env, "list", "--plain")
+		out := runComplytime(t, binary, workDir, env, "list")
 		t.Log(out)
 		assert.Contains(t, out, "nist-800-53-r5")
 		assert.NotContains(t, out, "(not cached)",
@@ -486,17 +486,17 @@ func TestE2E_NestedPolicyID(t *testing.T) {
 		out := runComplytime(t, binary, scanDir, env,
 			"scan", "--policy-id", nestedID, "--format", "oscal")
 		t.Log(out)
-		assert.Contains(t, out, "Scan completed.")
+		assert.Contains(t, out, "requirements:")
 
-		outDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
-		evalLog := assertOutputFile(t, outDir, "evaluation-log-", ".yaml")
-		oscalFile := assertOutputFile(t, outDir, "assessment-results-", ".json")
+		evalDir := filepath.Join(scanDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
+		evalLog := assertOutputFile(t, evalDir, "evaluation-log-", ".yaml")
+		oscalFile := assertOutputFile(t, scanDir, "assessment-results-", ".json")
 
 		// Filenames must be flat (no intermediate directories from slashed IDs)
-		assert.Equal(t, outDir, filepath.Dir(evalLog),
+		assert.Equal(t, evalDir, filepath.Dir(evalLog),
 			"evaluation log must be directly in output dir, not nested")
-		assert.Equal(t, outDir, filepath.Dir(oscalFile),
-			"OSCAL file must be directly in output dir, not nested")
+		assert.Equal(t, scanDir, filepath.Dir(oscalFile),
+			"OSCAL file must be directly in CWD, not nested")
 	})
 }
 
@@ -528,7 +528,7 @@ targets:
 	runComplytime(t, binary, workDir, env, "get")
 
 	out := runComplytime(t, binary, workDir, env,
-		"list", "--plain", "--policy-id", "cis-benchmark")
+		"list", "--policy-id", "cis-benchmark")
 	t.Log(out)
 	assert.Contains(t, out, "cis-benchmark")
 	assert.NotContains(t, out, "nist-800-53-r5",

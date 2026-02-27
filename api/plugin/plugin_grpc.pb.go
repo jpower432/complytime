@@ -24,9 +24,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Plugin_Generate_FullMethodName    = "/complyctl.plugin.v1.Plugin/Generate"
-	Plugin_Scan_FullMethodName        = "/complyctl.plugin.v1.Plugin/Scan"
-	Plugin_HealthCheck_FullMethodName = "/complyctl.plugin.v1.Plugin/HealthCheck"
+	Plugin_Generate_FullMethodName = "/complyctl.plugin.v1.Plugin/Generate"
+	Plugin_Scan_FullMethodName     = "/complyctl.plugin.v1.Plugin/Scan"
+	Plugin_Describe_FullMethodName = "/complyctl.plugin.v1.Plugin/Describe"
 )
 
 // PluginClient is the client API for Plugin service.
@@ -42,9 +42,9 @@ type PluginClient interface {
 	// Scan executes compliance checks against targets
 	// Called during `complyctl scan` command execution
 	Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (*ScanResponse, error)
-	// HealthCheck verifies plugin availability and compatibility
-	// Called during plugin discovery
-	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
+	// Describe reports plugin identity, health, and declared variable
+	// requirements. Called during plugin discovery and doctor diagnostics.
+	Describe(ctx context.Context, in *DescribeRequest, opts ...grpc.CallOption) (*DescribeResponse, error)
 }
 
 type pluginClient struct {
@@ -75,10 +75,10 @@ func (c *pluginClient) Scan(ctx context.Context, in *ScanRequest, opts ...grpc.C
 	return out, nil
 }
 
-func (c *pluginClient) HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error) {
+func (c *pluginClient) Describe(ctx context.Context, in *DescribeRequest, opts ...grpc.CallOption) (*DescribeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HealthCheckResponse)
-	err := c.cc.Invoke(ctx, Plugin_HealthCheck_FullMethodName, in, out, cOpts...)
+	out := new(DescribeResponse)
+	err := c.cc.Invoke(ctx, Plugin_Describe_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +98,9 @@ type PluginServer interface {
 	// Scan executes compliance checks against targets
 	// Called during `complyctl scan` command execution
 	Scan(context.Context, *ScanRequest) (*ScanResponse, error)
-	// HealthCheck verifies plugin availability and compatibility
-	// Called during plugin discovery
-	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
+	// Describe reports plugin identity, health, and declared variable
+	// requirements. Called during plugin discovery and doctor diagnostics.
+	Describe(context.Context, *DescribeRequest) (*DescribeResponse, error)
 	mustEmbedUnimplementedPluginServer()
 }
 
@@ -117,8 +117,8 @@ func (UnimplementedPluginServer) Generate(context.Context, *GenerateRequest) (*G
 func (UnimplementedPluginServer) Scan(context.Context, *ScanRequest) (*ScanResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Scan not implemented")
 }
-func (UnimplementedPluginServer) HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method HealthCheck not implemented")
+func (UnimplementedPluginServer) Describe(context.Context, *DescribeRequest) (*DescribeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Describe not implemented")
 }
 func (UnimplementedPluginServer) mustEmbedUnimplementedPluginServer() {}
 func (UnimplementedPluginServer) testEmbeddedByValue()                {}
@@ -177,20 +177,20 @@ func _Plugin_Scan_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Plugin_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HealthCheckRequest)
+func _Plugin_Describe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(PluginServer).HealthCheck(ctx, in)
+		return srv.(PluginServer).Describe(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Plugin_HealthCheck_FullMethodName,
+		FullMethod: Plugin_Describe_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PluginServer).HealthCheck(ctx, req.(*HealthCheckRequest))
+		return srv.(PluginServer).Describe(ctx, req.(*DescribeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -211,8 +211,8 @@ var Plugin_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Plugin_Scan_Handler,
 		},
 		{
-			MethodName: "HealthCheck",
-			Handler:    _Plugin_HealthCheck_Handler,
+			MethodName: "Describe",
+			Handler:    _Plugin_Describe_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

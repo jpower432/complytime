@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"github.com/complytime/complyctl/internal/cache"
@@ -21,7 +19,6 @@ import (
 
 type listOptions struct {
 	*Common
-	plain    bool
 	policyID string
 	cacheDir string
 }
@@ -31,11 +28,12 @@ func listCmd(common *Common) *cobra.Command {
 		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:          "list [flags]",
-		Short:        "List cached Gemara policies",
-		SilenceUsage: true,
-		Example:      "complyctl list\n  complyctl list --plain\n  complyctl list --policy-id nist-800-53-r5",
-		Args:         cobra.NoArgs,
+		Use:               "list [flags]",
+		Short:             "List cached Gemara policies",
+		SilenceUsage:      true,
+		Example:           "complyctl list\n  complyctl list --policy-id nist-800-53-r5",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := o.validate(); err != nil {
 				return err
@@ -46,8 +44,12 @@ func listCmd(common *Common) *cobra.Command {
 			return o.run(cmd.Context())
 		},
 	}
-	cmd.Flags().BoolVarP(&o.plain, "plain", "", false, "print table with minimal formatting")
 	cmd.Flags().StringVar(&o.policyID, "policy-id", "", "Filter by policy ID")
+	if err := cmd.RegisterFlagCompletionFunc("policy-id", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}); err != nil {
+		logger.Error("Failed to register policy-id completion", "error", err)
+	}
 	return cmd
 }
 
@@ -67,7 +69,7 @@ func (o *listOptions) complete() error {
 func (o *listOptions) run(_ context.Context) error {
 	ws := complytime.NewWorkspace()
 	if err := ws.LoadAndValidate(); err != nil {
-		return fmt.Errorf("failed to load complytime: %w", err)
+		return fmt.Errorf("failed to load workspace config: %w", err)
 	}
 
 	cfg := ws.Config()
@@ -75,61 +77,34 @@ func (o *listOptions) run(_ context.Context) error {
 	cacheMgr := cache.NewCache(o.cacheDir)
 	loader := policy.NewLoader(cacheMgr)
 
-	cached, err := loader.ListCachedPolicies()
-	if err != nil {
-		logger.Error("List cached policies failed", "error", err)
-		return fmt.Errorf("failed to list cached policies: %w", err)
-	}
-
+	var rows [][]string
 	for _, p := range cfg.Policies {
+		eid := p.EffectiveID()
+		if o.policyID != "" && eid != o.policyID {
+			continue
+		}
+
 		ref := complytime.ParsePolicyRef(p.URL)
-		if _, ok := cached[ref.Repository]; !ok {
-			cached[ref.Repository] = []string{"(not cached — " + p.EffectiveID() + ")"}
-		}
-	}
+		versions, _ := loader.GetCachedVersions(ref.Repository)
 
-	if o.policyID != "" {
-		if versions, ok := cached[o.policyID]; ok {
-			cached = map[string][]string{o.policyID: versions}
+		var versionStr string
+		if len(versions) > 0 {
+			sort.Strings(versions)
+			versionStr = strings.Join(versions, ", ")
 		} else {
-			cached = map[string][]string{}
+			versionStr = "-"
 		}
+
+		rows = append(rows, []string{eid, versionStr})
 	}
 
-	return printGemaraPolicyTable(o.Out, cached, o.plain)
+	return printGemaraPolicyTable(o.Out, rows)
 }
 
-func printGemaraPolicyTable(w io.Writer, policies map[string][]string, plain bool) error {
-	rows := make([]table.Row, 0, len(policies))
-	for id, vers := range policies {
-		sort.Strings(vers)
-		rows = append(rows, table.Row{id, strings.Join(vers, ", ")})
-	}
+func printGemaraPolicyTable(w io.Writer, rows [][]string) error {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i][0] < rows[j][0] })
 
-	columns := terminal.AutoColumnWidths([]table.Column{
-		{Title: "Policy ID"},
-		{Title: "Versions"},
-	}, rows, 2)
-
-	if plain {
-		terminal.ShowPlainTable(w, columns, rows)
-		return nil
-	}
-
-	tbl := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(min(7, len(rows)+2)),
-	)
-	tableStyle := table.DefaultStyles()
-	tableStyle.Header = tableStyle.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(false)
-	tbl.SetStyles(tableStyle)
-	fmt.Fprintln(w, tbl.View())
+	headers := []string{"POLICY ID", "VERSION"}
+	terminal.ShowPlainTable(w, headers, rows)
 	return nil
 }

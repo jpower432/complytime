@@ -17,7 +17,7 @@ const pluginRPCTimeout = 5 * time.Minute
 
 // Plugin is the interface that plugin authors implement for evaluation RPCs.
 type Plugin interface {
-	HealthCheck(ctx context.Context, req *HealthCheckRequest) (*HealthCheckResponse, error)
+	Describe(ctx context.Context, req *DescribeRequest) (*DescribeResponse, error)
 	Generate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error)
 	Scan(ctx context.Context, req *ScanRequest) (*ScanResponse, error)
 }
@@ -55,7 +55,7 @@ func NewManager(pluginDir string, logOutput io.Writer) (*Manager, error) {
 }
 
 // LoadPlugins discovers plugins via executable naming convention and verifies
-// each via HealthCheck RPC before registering.
+// each via Describe RPC before registering.
 func (m *Manager) LoadPlugins() error {
 	pluginInfos, err := m.discovery.DiscoverPlugins()
 	if err != nil {
@@ -74,19 +74,19 @@ func (m *Manager) LoadPlugins() error {
 			return fmt.Errorf("failed to create client for plugin %s: %w", info.PluginID, err)
 		}
 
-		healthCtx, healthCancel := context.WithTimeout(context.Background(), pluginRPCTimeout)
-		healthResp, healthErr := client.HealthCheck(healthCtx, &HealthCheckRequest{})
-		healthCancel()
-		if healthErr != nil {
+		descCtx, descCancel := context.WithTimeout(context.Background(), pluginRPCTimeout)
+		descResp, descErr := client.Describe(descCtx, &DescribeRequest{})
+		descCancel()
+		if descErr != nil {
 			client.Close()
-			fmt.Fprintf(os.Stderr, "WARNING: plugin %s HealthCheck failed: %v (skipping)\n",
-				info.PluginID, healthErr)
+			fmt.Fprintf(os.Stderr, "WARNING: plugin %s Describe failed: %v (skipping)\n",
+				info.PluginID, descErr)
 			continue
 		}
-		if !healthResp.Healthy {
+		if !descResp.Healthy {
 			client.Close()
 			fmt.Fprintf(os.Stderr, "WARNING: plugin %s is unhealthy: %s (skipping)\n",
-				info.PluginID, healthResp.ErrorMessage)
+				info.PluginID, descResp.ErrorMessage)
 			continue
 		}
 
@@ -127,10 +127,6 @@ func (m *Manager) ListPlugins() []*LoadedPlugin {
 		}
 	}
 	return plugins
-}
-
-func (p *LoadedPlugin) GetEvaluatorIDs() []string {
-	return []string{p.Info.EvaluatorID}
 }
 
 // Cleanup kills all managed plugin subprocesses. Call via defer after LoadPlugins.

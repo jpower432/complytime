@@ -53,12 +53,20 @@ type PolicyTimeline struct {
 	EnforcementNotes string
 }
 
-// Resolver builds a DependencyGraph from cached OCI layers for a given policy.
-type Resolver struct {
-	loader *Loader
+// PolicyLoader abstracts the Loader methods used by Resolver, enabling
+// mock injection for unit tests without coupling to OCI store internals.
+type PolicyLoader interface {
+	LoadLayerByMediaType(policyID, version, mediaType string) ([]byte, error)
+	PolicyExists(policyID, version string) bool
+	ResolveVersion(policyID, configVersion string) (string, error)
 }
 
-func NewResolver(loader *Loader) *Resolver {
+// Resolver builds a DependencyGraph from cached OCI layers for a given policy.
+type Resolver struct {
+	loader PolicyLoader
+}
+
+func NewResolver(loader PolicyLoader) *Resolver {
 	return &Resolver{
 		loader: loader,
 	}
@@ -91,42 +99,46 @@ func (r *Resolver) ResolvePolicyGraph(policyID, version string) (*DependencyGrap
 		Assessments: []Assessment{},
 	}
 
-	controlsData, err := r.loader.LoadLayerByMediaType(policyID, version, complytime.MediaTypeCatalog)
-	if err == nil {
+	controlsData, catalogLoadErr := r.loader.LoadLayerByMediaType(policyID, version, complytime.MediaTypeCatalog)
+	if catalogLoadErr == nil {
 		ctrl := Control{
 			ID:      policyID + "-catalog",
 			Content: controlsData,
 		}
 		parsed, parseErr := parseControlCatalog(controlsData)
-		if parseErr == nil {
-			ctrl.Parsed = parsed
+		if parseErr != nil {
+			return nil, fmt.Errorf("policy %s: catalog layer is not valid Gemara: %w", policyID, parseErr)
 		}
+		ctrl.Parsed = parsed
 		graph.Controls = append(graph.Controls, ctrl)
 	}
 
-	guidelinesData, err := r.loader.LoadLayerByMediaType(policyID, version, complytime.MediaTypeGuidance)
-	if err == nil {
+	guidelinesData, guidanceLoadErr := r.loader.LoadLayerByMediaType(policyID, version, complytime.MediaTypeGuidance)
+	if guidanceLoadErr == nil {
 		gl := Guideline{
 			ID:      policyID + "-guidance",
 			Content: guidelinesData,
 		}
 		parsed, parseErr := parseGuidanceCatalog(guidelinesData)
-		if parseErr == nil {
-			gl.Parsed = parsed
+		if parseErr != nil {
+			return nil, fmt.Errorf("policy %s: guidance layer is not valid Gemara: %w", policyID, parseErr)
 		}
+		gl.Parsed = parsed
 		graph.Guidelines = append(graph.Guidelines, gl)
 	}
 
-	policyData, err := r.loader.LoadLayerByMediaType(policyID, version, complytime.MediaTypePolicy)
-	if err == nil {
-		policyLayer, parseErr := parsePolicyLayer(policyID, policyData)
-		if parseErr != nil {
-			return nil, fmt.Errorf("failed to parse policy layer for %s: %w", policyID, parseErr)
-		}
-		graph.EvaluatorID = policyLayer.EvaluatorID
-		graph.Assessments = append(graph.Assessments, policyLayer.Assessments...)
-		graph.Timeline = policyLayer.Timeline
+	policyData, policyLoadErr := r.loader.LoadLayerByMediaType(policyID, version, complytime.MediaTypePolicy)
+	if policyLoadErr != nil {
+		return nil, fmt.Errorf("failed to load policy layer for %s@%s: %w", policyID, version, policyLoadErr)
 	}
+
+	policyLayer, parseErr := parsePolicyLayer(policyID, policyData)
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse policy layer for %s: %w", policyID, parseErr)
+	}
+	graph.EvaluatorID = policyLayer.EvaluatorID
+	graph.Assessments = append(graph.Assessments, policyLayer.Assessments...)
+	graph.Timeline = policyLayer.Timeline
 
 	return graph, nil
 }

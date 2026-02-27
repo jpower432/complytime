@@ -1,11 +1,11 @@
 # Implementation Plan: Gemara-Native Decoupled Workflow
 
-**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-25d) | **Spec**: [spec.md](./spec.md)
+**Branch**: `001-gemara-native-workflow` | **Date**: 2026-02-14 (updated 2026-02-26e) | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/001-gemara-native-workflow/spec.md`
 
 ## Summary
 
-Replace the legacy C2P/OSCAL workflow in complyctl with a Gemara-native decoupled workflow. Core changes: OCI registry-based policy fetch using `oras-go/v2` with zero custom auth (`oras-credentials-go`), gRPC scanning interface via `hashicorp/go-plugin`, policy graph resolution via `go-gemara`, and multi-format output (EvaluationLog, OSCAL, Markdown, SARIF). Each policy is a single multi-layer OCI manifest; layers identified by YAML media type (`+yaml`). Scanning provider subsystem simplified — no manifests, no checksums, no mock code in production. Per-assessment-plan evaluator routing supports heterogeneous policies with multiple evaluators (R32). `complyctl generate` persists artifacts with digest-based freshness tracking; `scan` auto-detects and reuses or regenerates (R34, R37). Three-tier variable model (R48): global variables (workspace-scoped, e.g., scan output directory), target variables (per-target runtime config like credentials/profile, passed during Scan RPC), and test variables (per-requirement parameters from decomposed Gemara policy, passed during Generate RPC). Replaces old `evaluator_config` concept. Scan RPC receives targets only — no `requirement_ids`; providers evaluate all requirements from Generate-time state (R47). Post-scan terminal output: ActionError-style emoji + message per non-passing result, single-row charmbracelet totals table (R45, FR-037). Result aggregation delegates to go-gemara. `complyctl doctor` for comprehensive pre-flight diagnostics (R44, FR-039); doctor validates required variables via HealthCheck-declared `required_global_variables` and `required_target_variables` fields (R51). `complyctl init` is config-creation-only: creates `complytime.yaml` and exits (R54, supersedes R52/R50 composite orchestrator). User runs `get` and `doctor` separately. `complytime.yaml` uses `PolicyEntry` objects: each policy has a `url` (full OCI reference including registry) and an optional `id` (user-chosen shortname; auto-derived from last URL path segment if omitted). No `pack` field, no separate `registry` section — each policy URL is self-contained. Policies from different registries coexist. Targets reference policies by effective ID (Session 2026-02-25d, supersedes R54 dual-mode config). Pack builder is a separate tool — all pack CLI commands deferred to 002. `complytime.yaml` is a static convention like `go.mod` — no `--config` flag. Scan output directory centralized as `ScanOutputDir` constant (R42, FR-038).
+Replace the legacy C2P/OSCAL workflow in complyctl with a Gemara-native decoupled workflow. Core changes: OCI registry-based policy fetch using `oras-go/v2` with zero custom auth (`oras-credentials-go`), gRPC scanning interface via `hashicorp/go-plugin`, policy graph resolution via `go-gemara`, and multi-format output (EvaluationLog, OSCAL, Markdown, SARIF). Each policy is a single multi-layer OCI manifest; layers identified by YAML media type (`+yaml`). Scanning provider subsystem simplified — no manifests, no checksums, no mock code in production. Per-assessment-plan evaluator routing supports heterogeneous policies with multiple evaluators (R32). `complyctl generate` persists artifacts with digest-based freshness tracking; `scan` auto-detects and reuses or regenerates (R34, R37). Three-tier variable model (R48): global variables (workspace-scoped, e.g., scan output directory), target variables (per-target runtime config like credentials/profile, passed during Scan RPC), and test variables (per-requirement parameters from decomposed Gemara policy, passed during Generate RPC). Replaces old `evaluator_config` concept. Scan RPC receives targets only — no `requirement_ids`; providers evaluate all requirements from Generate-time state (R47). Post-scan terminal output: report-style layout with 4-column plain text table (Requirement ID, Control ID, Status, Message) for non-passing results + compact inline totals (FR-037). Result aggregation delegates to go-gemara. All tabular outputs use plain aligned text (`ShowPlainTable`) — `lipgloss/table` dependency removed due to persistent emoji alignment issues across terminals (Session 2026-02-26e). No `--pretty` flag, no `--plain` flag. `charmbracelet/bubbles/table` removed. `generate` outputs a structured plain-text block (indented labeled lines per target-provider pair), not a table. `scan --dry-run` removed — `generate` is the only execution plan preview (Session 2026-02-26e). Log file at `.complytime/complyctl.log` (R57). Formatted reports (`--format oscal|pretty|sarif`) written to CWD; EvaluationLog stays in `.complytime/scan/` (R58). `complyctl doctor` for comprehensive pre-flight diagnostics (R44, FR-039); doctor validates required variables via Describe-declared `required_global_variables` and `required_target_variables` fields (R51). `complyctl init` is config-creation-only: creates `complytime.yaml` and exits (R54, supersedes R52/R50 composite orchestrator). User runs `get` and `doctor` separately. `complytime.yaml` uses `PolicyEntry` objects: each policy has a `url` (full OCI reference including registry) and an optional `id` (user-chosen shortname; auto-derived from last URL path segment if omitted). No `pack` field, no separate `registry` section — each policy URL is self-contained. Policies from different registries coexist. Targets reference policies by effective ID (Session 2026-02-25d, supersedes R54 dual-mode config). Pack builder is a separate tool — all pack CLI commands deferred to 002. `complytime.yaml` is a static convention like `go.mod` — no `--config` flag. Scan output directory centralized as `ScanOutputDir` constant (R42, FR-038).
 
 **Terminology**: User-facing documentation uses "scanning providers" for individual evaluator executables and "scanning interface" for the gRPC contract they implement. Code-level packages (`pkg/plugin`, `internal/plugin`) retain `plugin` naming for compatibility with `hashicorp/go-plugin`. CLI command: `complyctl providers`.
 
@@ -30,7 +30,9 @@ flowchart TD
     subgraph WorkspaceDir["Workspace (./)"]
         Config["complytime.yaml<br/>(policies[]: PolicyEntry url+id,<br/>variables (global),<br/>targets[].policies + variables)<br/>Session 2026-02-25d"]
         PackManifest["complypack.yaml (R53)<br/>(pack id/version, platform,<br/>policies[], providers[],<br/>system-dependencies[])<br/>ALL pack CLI deferred to 002"]
-        ScanOutput[".complytime/scan/<br/>evaluation-log.yaml<br/>+ formatted reports"]
+        ScanOutput[".complytime/scan/<br/>evaluation-log.yaml<br/>(diagnostic artifact)"]
+        FormattedReport["CWD: ./report.*<br/>(--format oscal|pretty|sarif)<br/>user-facing deliverable (R58)"]
+        LogFile[".complytime/complyctl.log<br/>(R57)"]
     end
 
     subgraph PolicyResolution["Policy Resolution (internal/)"]
@@ -46,14 +48,14 @@ flowchart TD
     end
 
     subgraph Output["Output Formatting (internal/output/)"]
-        ExecPlan["execution_plan.go<br/>charmbracelet tables<br/>(Evaluator Routing + Target Scope)"]
+        ExecPlan["execution_plan.go<br/>structured plain-text block<br/>(Target + Provider + Requirements + Status)"]
         EvalLog["evaluator.go<br/>EvaluationLog builder"]
-        ScanSummary["scan_summary.go<br/>ActionError-style output<br/>(emoji + message per failure,<br/>single-row totals table)"]
+        ScanSummary["scan_summary.go<br/>report-style: intro → 4-col plain table<br/>(ReqID, CtrlID, Status, Message)<br/>→ totals + file paths"]
         Formatters["oscal.go / markdown.go / sarif.go"]
     end
 
     subgraph Doctor["Doctor Diagnostics"]
-        DoctorCmd["doctor.go<br/>config + providers<br/>+ per-policy version comparison (R55)<br/>+ per-provider config summary (R55)<br/>+ HealthCheck-declared variable<br/>validation (R51)<br/>+ --verbose for key detail"]
+        DoctorCmd["doctor.go<br/>config + providers<br/>+ per-policy version comparison (R55)<br/>+ per-provider config summary (R55)<br/>+ Describe-declared variable<br/>validation (R51)<br/>+ --verbose for key detail"]
     end
 
     CLI -- "init (config-only; PolicyEntry prompts, R54/25d)" --> Config
@@ -66,7 +68,7 @@ flowchart TD
     CLI -- "doctor" --> DoctorCmd
     DoctorCmd -- "validate" --> Config
     DoctorCmd -. "pack-layer checks (R53, 002)" .-> PackManifest
-    DoctorCmd -- "discover + HealthCheck<br/>(required_*_variables)" --> Discovery
+    DoctorCmd -- "discover + Describe<br/>(required_*_variables)" --> Discovery
     DoctorCmd -- "resolve policy→evaluator→target" --> PolicyCache
     DoctorCmd -- "version comparison<br/>(cached vs remote latest, R55)" --> Registry
 
@@ -86,11 +88,12 @@ flowchart TD
     Manager --> ExecPlan
     EvalLog --> ScanOutput
     EvalLog --> Formatters
-    Formatters --> ScanOutput
+    Formatters --> FormattedReport
 
-    ExecPlan -- "charmbracelet (R38)" --> CLI
+    ExecPlan -- "plain text block" --> CLI
     EvalLog --> ScanSummary
-    ScanSummary -- "emoji + message lines (R45)" --> CLI
+    ScanSummary -- "report-style: intro → plain table → totals" --> CLI
+    CLI -- "logger" --> LogFile
 ```
 
 ## Technical Context
@@ -105,7 +108,7 @@ flowchart TD
 - `buf` CLI — protobuf codegen, linting, breaking-change detection (R5)
 
 **Storage**: Local OCI Layout store (`~/.complytime/policies/{id}/`) via `oras-go/v2/content/oci` (R17)
-**Testing**: `go test` with `testify/assert` + `testify/require`. Integration tests behind `//go:build integration`. E2E tests behind `//go:build e2e`. Test scanning provider binary at `cmd/test-plugin/`.
+**Testing**: `go test` with `testify/assert` + `testify/require`. Integration tests behind `//go:build integration`. E2E tests behind `//go:build e2e`. Test scanning provider binary at `cmd/test-plugin/`. Unit test requirements (Session 2026-02-26): all exported functions in `internal/policy/`, `pkg/plugin/discovery.go` MUST have positive + negative test cases. `internal/cache/state.go` covered indirectly by `sync_test.go`. Resolver tests use `PolicyLoader` interface mock — no OCI store dependency. Policy layer parsing tested with synthetic YAML stubs (no upstream go-gemara fixtures). Plugin discovery tests use real temp directories with mock executables (no interface abstraction).
 **Target Platform**: Linux/macOS CLI (cross-compiled via `go build`)
 **Project Type**: Single CLI application with gRPC scanning provider architecture
 **Performance Goals**: Deferred — SC-001 through SC-007 are aspirational (R14)
@@ -119,15 +122,15 @@ flowchart TD
 **Session 2026-02-23b Changes (Spec Clarifications)**:
 - Per-assessment-plan evaluator routing: each plan's `evaluation-methods[].executor.id` determines the scanning provider. Multi-evaluator policies dispatch to N providers (R32)
 - `complyctl providers` command added: top-level command showing discovered scanning providers (R33)
-- `complyctl generate` stays as `generate`; persists artifacts + records policy cache digest; outputs tabular execution plan (R34 updated, R37)
+- `complyctl generate` stays as `generate`; persists artifacts + records policy cache digest; outputs structured plain-text execution plan (R34 updated, R37, Session 2026-02-26e)
 - `complyctl scan` is smart about generation: auto-generate if no artifacts, reuse if fresh, warn+regenerate if stale (R37)
-- `complyctl scan --dry-run` provides pre-flight preview without executing checks (FR-033)
-- `complyctl scan` prints brief one-line summary before scanning in normal mode (FR-034)
-- Execution plan format: two tables — evaluator-to-requirements and target-to-policy (R36)
+- ~~`complyctl scan --dry-run` provides pre-flight preview without executing checks (FR-033)~~ (removed Session 2026-02-26e — `generate` is the only plan preview)
+- `complyctl scan` prints brief one-line summary before scanning (FR-034)
+- ~~Execution plan format: two tables — evaluator-to-requirements and target-to-policy (R36)~~ (superseded: structured plain-text block, Session 2026-02-26e)
 
-**Session 2026-02-23c Changes (Spec Clarifications)**:
-- All tabular CLI outputs (`list`, `providers`, `generate` execution plan, `scan --dry-run` execution plan) use charmbracelet (`bubbles/table` + `lipgloss`) rendering (R38). Reuse `internal/terminal` package helpers.
-- `--plain` flag extends only to discovery commands: `list` and `providers`.
+**Session 2026-02-23c Changes (Spec Clarifications)** *(partially superseded by R57)*:
+- ~~All tabular CLI outputs use charmbracelet rendering (R38)~~ (superseded R57: plain default, `--pretty` for lipgloss). `internal/terminal` package provides both renderers.
+- ~~`--plain` flag extends only to discovery commands~~ (superseded R57: plain is default, `--plain` removed, `--pretty` added).
 - `parsePolicyLayer` accepts only `gemara.Policy` with `adherence.assessment-plans` (R39). Fail fast on invalid YAML.
 
 **Session 2026-02-23d Changes (Spec Clarifications)**:
@@ -180,6 +183,31 @@ flowchart TD
 - **Config validation**: `Validate()` checks non-empty policies, unique URLs, unique effective IDs. `ValidateTargetPolicyVersions()` ensures target policy IDs exist in workspace policies by effective ID.
 - **Init prompts**: `complyctl init` prompts for policy URLs (with optional shortname ID per policy) and targets (referencing policies by effective ID).
 
+**Session 2026-02-26b Changes (Terminal Output Redesign + Log Relocation)** *(partially superseded by Session 2026-02-26e — lipgloss/table removed entirely)*:
+- **Plain default (R57)**: All tabular CLI outputs default to plain aligned text (podman-style columns with whitespace padding, no box borders) with emoji status indicators. Supersedes R38 (charmbracelet default). `--plain` flag removed — plain is the default. ~~`--pretty` flag added for lipgloss-rendered tables~~ (removed Session 2026-02-26e).
+- **`bubbles/table` removed (R57)**: `charmbracelet/bubbles` dependency removed entirely. ~~`charmbracelet/lipgloss/table` retained for `--pretty`~~ (removed Session 2026-02-26e). `internal/terminal/table.go` `ShowPlainTable` is the sole rendering function.
+- **Log relocated (R57)**: Log file moved from `./complyctl.log` (workspace root) to `.complytime/complyctl.log` (workspace artifact directory). New constant `LogFileName = "complyctl.log"` in `internal/complytime/consts.go`. Log path constructed as `{workspace}/{WorkspaceDir}/{LogFileName}`. FR-038 updated.
+- **Scan totals (R57)**: Totals summary matching doctor format: `50 requirements: 44 passed, 3 failed, 2 skipped, 1 error`. Single line, word labels, total prefix. Consistent with doctor's `{N} checks: {N} passed, {N} failed, {N} warnings` pattern. Replaces emoji-only compact inline format.
+- **`list` columns (R57)**: Two columns only: `POLICY ID` + `VERSION`. Plain aligned text with header row.
+
+**Session 2026-02-26c Changes (Output Path Split + Discovery Simplification)** *(partially superseded by Session 2026-02-26e — all lipgloss removed)*:
+- **`--pretty` removed from discovery commands (R58)**: `list` and `providers` use plain aligned text only. No `--pretty` flag. ~~`--pretty` reserved for `scan` and `generate --dry-run`~~ (removed Session 2026-02-26e — no `--pretty` anywhere, no `--dry-run`). Reduces flag surface area on informational commands.
+- **`--format` output to CWD (R58)**: Formatted reports (OSCAL, SARIF, Markdown) written to current working directory when `--format` is specified. EvaluationLog (diagnostic artifact) stays in `.complytime/scan/`. Output path split: diagnostics in hidden dir, deliverables in CWD.
+- **EvaluationLog path always printed (R58)**: `Evaluation log: .complytime/scan/eval.yaml` printed to terminal regardless of `--format`. Users need the path for debugging. One line, low noise.
+
+**Session 2026-02-26d Changes (UX Refresh — Lipgloss Default + Scan Table + Execution Plan Collapse)** *(partially superseded by Session 2026-02-26e — lipgloss removed, `--dry-run` removed)*:
+- **Lipgloss as universal default (R59)**: All tabular output uses lipgloss-rendered tables by default. `--pretty` flag removed from all commands (`scan`, `generate`). TTY detection via `term.IsTerminal(os.Stdout.Fd())` dispatches to lipgloss (interactive) or `ShowPlainTable` (piped/redirected). No user-facing flags. Supersedes R57 (plain default) and R58 (no `--pretty` on discovery).
+- **Report-style layout (R59)**: All tabular commands follow intro text → subtle lipgloss table → conclusion text. Intro provides context (policy ID, targets, counts). Conclusion provides actionable output (totals, file paths, next steps).
+- **Scan results table (R59)**: FR-037 redesigned. Non-passing results displayed in a 4-column lipgloss table: Requirement ID, Control ID, Status (emoji), Message. Ordered by severity: ❌ failed → ⚠️ error → ⏭️ skipped. Passed results in totals line only. `FormatScanSummary` gains `reqToControl` map parameter for control ID lookup. Supersedes ActionError-style emoji+message-per-line design.
+- **Execution plan collapsed (R59)**: Two-table layout (Provider Routing + Target Scope) collapsed to single table: Target, Provider, Requirements (count), Status. `ProviderRoute` and `TargetScope` structs merged into `ExecutionPlanRow`. `FormatExecutionPlan` no longer takes `pretty bool` parameter.
+- **Code removals**: `pretty bool` field removed from `scanOptions` and `generateOptions`. `--pretty` flag registration removed from `scan.go` and `generate.go`. `FormatExecutionPlan` signature simplified. `OutputFormatPretty` constant unchanged (it's the `--format pretty` value for Markdown reports, not a rendering flag).
+
+**Session 2026-02-26e Changes (Plain Text Only + Dry-Run Removal + Generate Readout)**:
+- **Lipgloss tables removed entirely**: `lipgloss/table` dependency dropped. Persistent emoji alignment issues (double-width glyphs measured as single-width) broke column alignment across terminals. `ShowPlainTable` (podman-style columns with whitespace padding) is the sole table renderer for ALL contexts (TTY and non-TTY). `RenderTable` (lipgloss) and `RenderReport` (lipgloss dispatch) removed from `internal/terminal`. `IsTTY()` retained for future use but no longer gates renderer selection. Supersedes R59 (lipgloss universal default), R57 (plain default with `--pretty`), R58 (discovery no `--pretty`).
+- **Generate execution plan readout**: Structured plain-text block with indented labeled lines per target-provider pair. No table. `FormatExecutionPlan` uses `fmt.Fprintf` with alignment — intro line with policy ID, one stanza per target-provider, conclusion line. Supersedes R59 single lipgloss table.
+- **`scan --dry-run` removed**: `generate` is the only execution plan preview. `scan` auto-generates when needed but shows only the one-line pre-scan summary (FR-034). `--dry-run` was redundant once `generate` existed as a separate command. FR-033 removed.
+- **Code removals**: `RenderTable()`, `RenderTableString()`, `RenderReport()`, `RenderReportString()` removed from `internal/terminal/table.go`. `lipgloss`, `lipgloss/table`, `charmbracelet/x/term` imports removed from `table.go`. `--dry-run` flag removed from `scan.go`. `borderColor`, `headerStyle`, `cellStyle`, `borderStyle`, `sectionLabel` style variables removed.
+
 **Scale/Scope**: 5 targets, 3 policy IDs typical. 50 controls, 20 assessments per policy.
 
 ## Constitution Check
@@ -192,7 +220,7 @@ flowchart TD
 | II. Simplicity & Isolation | **PASS** | Small focused packages: `cache`, `config`, `plugin`, `policy`, `output`, `registry`, `doctor`. Targets-only Scan RPC simplifies proto contract (R47). |
 | III. Incremental Improvement | **PASS** | Scanning provider simplification (manifest/checksum removal) in separate PR scope from auth refactor. |
 | IV. Code for Humans | **PASS** | Explicit naming (`ExtractAssessmentConfigs`, `GroupByEvaluator`). Three-tier variable model is self-documenting: global/target/test. |
-| V. Do Not Reinvent the Wheel | **PASS** | Auth delegates to `oras-credentials-go`. Cache delegates to `oras-go/v2/content/oci`. Result aggregation delegates to go-gemara (R45). Spinner delegates to `charmbracelet/bubbles/spinner` (was hand-rolled). |
+| V. Do Not Reinvent the Wheel | **PASS** | Auth delegates to `oras-credentials-go`. Cache delegates to `oras-go/v2/content/oci`. Result aggregation delegates to go-gemara (R45). Spinner delegates to `charmbracelet/bubbles/spinner`. Plain table uses `fmt.Fprintf` (Session 2026-02-26e; `lipgloss/table` removed). |
 | VI. Composability | **PASS** | CLI commands compose: `init` (config only) → `get` → `doctor` → `generate` (optional) → `scan`. Each command works standalone. Pack builder deferred to separate tool (Session 2026-02-25d). |
 | VII. Convention Over Configuration | **PASS** | `complytime.yaml` is a static convention like `go.mod` — no `--config` flags. PolicyEntry: url is self-contained OCI reference, id auto-derives from URL path if omitted (Session 2026-02-25d). Defaults: `~/.complytime/providers/`, `~/.complytime/`. Provider discovery by naming convention. |
 
@@ -225,11 +253,47 @@ flowchart TD
 - **V (Do Not Reinvent the Wheel)**: Version comparison reuses existing `DefinitionVersion()` resolver from `internal/registry/resolver.go` and `PolicyState` from `internal/cache/state.go`. No new infrastructure.
 - **VII (Convention Over Configuration)**: `--verbose` follows the standard `--verbose`/`-v` CLI convention. Default output is the 80% case; verbose is opt-in. Policy evaluation periods noted as future `--verbose` candidate — incremental expansion, not a flag explosion.
 
+**Post-design re-check (2026-02-26 — Unit test strategy)**: All gates pass. R56 strengthens:
+- **I (Single Source of Truth)**: Test scenarios derived from spec edge case table and functional requirements — not independently invented. Synthetic YAML stubs encode the Gemara Policy contract once per test file.
+- **II (Simplicity & Isolation)**: Each test file tests one source file. `PolicyLoader` interface isolates resolver tests from OCI cache internals. Real temp dir for discovery tests avoids adding production abstraction for testability.
+- **IV (Readability First)**: Synthetic YAML stubs are self-documenting — test reader sees exact input structure. No external fixture dependencies.
+- **V (Do Not Reinvent the Wheel)**: Uses `testify/assert` + `testify/require` (already vendored). `t.TempDir()` for filesystem tests. No custom test framework.
+
+**Post-design re-check (2026-02-26b — Terminal output redesign + log relocation)**: All gates pass. R57 strengthens:
+- **I (Single Source of Truth)**: `LogFileName` constant centralizes the log filename. Log path derived from existing `WorkspaceDir` + new `LogFileName` — no hardcoded paths scattered across commands.
+- **II (Simplicity & Isolation)**: Removing `bubbles/table` eliminates one dependency and one rendering path from the default code flow. Plain output is simpler to maintain, test, and debug.
+- **IV (Readability First)**: Plain aligned text is universally readable — no ANSI escape sequences to parse mentally. Emoji status indicators preserve at-a-glance scanning without styled borders.
+- **V (Do Not Reinvent the Wheel)**: `ShowPlainTable` uses `fmt.Fprintf` with width calculation — minimal code, zero external dependencies. `lipgloss/table` retained for `--pretty` rather than writing a custom styled renderer.
+- **VI (Composability)**: Plain text output is pipeable to `grep`, `awk`, `jq`. Charmbracelet borders broke standard text processing tools. `--pretty` is opt-in for interactive use.
+- **VII (Convention Over Configuration)**: Plain is the default — matches every other CLI tool (podman, kubectl, docker). `--pretty` follows standard CLI convention for styled output. Zero decisions for the common case.
+
 **Post-design re-check (2026-02-25d — PolicyEntry refactoring + pack separation)**: All gates pass. Session 2026-02-25d strengthens:
 - **I (Single Source of Truth)**: Each policy's registry lives in its own URL — no global `registry` section to keep in sync. `EffectiveID()` derives a single canonical shortname per policy. `FindPolicy()` provides one resolution path for all consumers.
 - **II (Simplicity & Isolation)**: Removing `pack` field, `RegistryConfig`, and dual-mode mutual exclusion reduces `WorkspaceConfig` to a flat list of `PolicyEntry` + `variables` + `targets`. One struct, one mode.
 - **VI (Composability)**: Pack builder separated from `complyctl` runtime. Each tool does one thing: `complyctl` = compliance runtime, pack builder = delivery mechanism. `get` dynamically creates per-registry clients — no global registry dependency.
 - **VII (Convention Over Configuration)**: `EffectiveID()` auto-derives shortnames from URL path — users only specify `id` when they want to override the convention. Zero config for the common case.
+
+**Post-design re-check (2026-02-26d — UX refresh: lipgloss default + scan table + execution plan collapse)**: All gates pass. R59 strengthens:
+- **I (Single Source of Truth)**: TTY detection centralized in `internal/terminal`. Scan results table column set defined once in `FormatScanSummary`. `reqToControl` map is the single source for requirement→control mapping — no duplicate lookup paths.
+- **II (Simplicity & Isolation)**: Removing `--pretty` from all commands eliminates branching logic in every CLI command. One rendering path per TTY state, not per flag combination. Execution plan collapses two structs (`ProviderRoute`, `TargetScope`) into one (`ExecutionPlanRow`).
+- **IV (Readability First)**: Scan results table gives admins requirement ID + control ID + message in one view — no cross-referencing the EvaluationLog. Report-style layout (intro → table → conclusion) provides natural reading flow with contextual framing.
+- **V (Do Not Reinvent the Wheel)**: `lipgloss/table` already handles terminal width adaptation, border rendering, and cell padding. `term.IsTerminal` from `charmbracelet/x/term` already vendored.
+- **VI (Composability)**: Non-TTY fallback to plain text preserves pipeability. `grep`, `awk`, `jq` still work on piped output.
+- **VII (Convention Over Configuration)**: No flags needed — lipgloss for interactive, plain for pipes. Zero decisions for the user. Matches how modern CLIs (`gh`, `bat`) detect TTY automatically.
+
+**Post-design re-check (2026-02-26e — Plain text only + dry-run removal + generate readout)**: All gates pass. Session 2026-02-26e strengthens:
+- **I (Single Source of Truth)**: `ShowPlainTable` is the single rendering path for all tabular output — no TTY-gated dispatch branching. Generate's structured block uses `fmt.Fprintf` directly — one format function per output type.
+- **II (Simplicity & Isolation)**: Removing `lipgloss/table` eliminates a dependency with emoji width measurement issues. Removing `--dry-run` eliminates a flag, a code path, and an FR (FR-033) that duplicated `generate`. Net reduction: one dependency, one flag, two rendering functions (`RenderTable`, `RenderReport`), and several style variables.
+- **IV (Readability First)**: Plain aligned text renders identically across all terminals — no ANSI escape sequences, no border character misalignment, no emoji width guessing. Generate's indented block is immediately scannable without column alignment to parse.
+- **V (Do Not Reinvent the Wheel)**: `ShowPlainTable` uses `fmt.Fprintf` with width calculation — zero external dependencies. Emoji width issues in lipgloss would have required custom `runewidth` overrides to fix — reinventing what the library should handle.
+- **VI (Composability)**: Plain text output is always pipeable. No TTY detection needed — identical output in all contexts. `grep`, `awk`, `cut` work on every output.
+- **VII (Convention Over Configuration)**: Zero flags for rendering control — no `--pretty`, no `--plain`, no TTY detection surprises. One rendering style everywhere. Matches kubectl, podman, docker default output patterns.
+
+**Post-design re-check (2026-02-26c — Output path split + discovery simplification)**: All gates pass. R58 strengthens:
+- **II (Simplicity & Isolation)**: Removing `--pretty` from `list` and `providers` eliminates unused flag paths and rendering branches. Two fewer code paths to maintain. Scan output path split (diagnostics vs. deliverables) gives each artifact a clear single destination.
+- **VI (Composability)**: Plain-only discovery output is always pipeable. Formatted reports in CWD are immediately accessible to downstream tools. EvaluationLog in hidden dir stays out of the way.
+- **VII (Convention Over Configuration)**: CWD for `--format` output matches standard CLI behavior — output where the user is working. No `--output-dir` flag needed. Zero decisions for the common case.
+- **IV (Readability First)**: EvaluationLog path always printed — users don't need to remember or look up where diagnostics go.
 
 ## Project Structure
 
@@ -256,10 +320,10 @@ cmd/
 │       ├── root.go          # CLI root + subcommand registration
 │       ├── init.go          # complyctl init — config-creation-only; errors if config exists (FR-003, R54)
 │       ├── get.go           # complyctl get (FR-002, FR-004, FR-005)
-│       ├── list.go          # complyctl list (FR-031)
-│       ├── providers.go     # complyctl providers — charmbracelet + --plain (FR-032, R38)
-│       ├── generate.go      # complyctl generate (FR-007, FR-008, FR-009)
-│       ├── scan.go          # complyctl scan (FR-024, FR-012, FR-033 --dry-run, FR-034)
+│       ├── list.go          # complyctl list — plain text (FR-031)
+│       ├── providers.go     # complyctl providers — plain text (FR-032)
+│       ├── generate.go      # complyctl generate — structured plain-text readout (FR-007, Session 2026-02-26e)
+│       ├── scan.go          # complyctl scan — no --dry-run (FR-024, FR-012; FR-033 removed Session 2026-02-26e)
 │       └── doctor.go        # complyctl doctor — pre-flight diagnostics + --verbose flag (FR-039, R44, R55)
 ├── mock-oci-registry/       # Test OCI registry server
 └── test-plugin/             # E2E test scanning provider binary (NOT referenced by production code)
@@ -274,7 +338,7 @@ internal/
 ├── complytime/
 │   ├── config.go            # WorkspaceConfig, PolicyEntry, LoadFrom(), SaveTo(), Validate(), FindPolicy(), PolicyIDs(), UniqueRegistries(); PolicyEntry: url + optional id (Session 2026-02-25d)
 │   ├── config_test.go       # Config unit tests
-│   ├── consts.go            # Centralized constants: WorkspaceDir (R42), ScanOutputDir (R42), media types (R27), emoji status (R43), PackManifestFile (R53)
+│   ├── consts.go            # Centralized constants: WorkspaceDir (R42), ScanOutputDir (R42), LogFileName (R57), media types (R27), emoji status (R43), PackManifestFile (R53)
 │   ├── pack.go              # PackManifest, PlatformConfig, PackPolicyEntry, PackProviderEntry, SystemDependency structs; LoadPackManifest(), ValidatePackManifest(), PackManifestExists(), PackPolicyIDs() (R53, R54 — types + pack init in 001, build/push/pull in 002)
 │   ├── pack_test.go         # Pack manifest validation, loading, YAML parsing, duplicate detection tests
 │   └── workspace.go         # Workspace path helpers: NewWorkspace(), Exists(), Path() (R50)
@@ -282,25 +346,29 @@ internal/
 │   └── doctor.go            # Pre-flight diagnostics: config, providers, per-policy version comparison, per-provider config summary, variable checks (R44, R55)
 ├── output/
 │   ├── evaluator.go         # EvaluationLog builder
-│   ├── scan_summary.go      # ActionError-style scan output — emoji + message per failure, totals table (FR-037, R45)
+│   ├── scan_summary.go      # Report-style scan output — intro, 4-col plain table (ReqID, CtrlID, Status, Message), totals (FR-037)
 │   ├── markdown.go          # Markdown report
 │   ├── oscal.go             # OSCAL export
-│   ├── execution_plan.go    # Execution plan formatter — charmbracelet tables (FR-033, R36, R38)
+│   ├── execution_plan.go    # Execution plan formatter — structured plain-text block (FR-007, Session 2026-02-26e)
 │   └── sarif.go             # SARIF export
 ├── policy/
 │   ├── loader.go            # OCI Layout → layer extraction by media type (R25, R27)
 │   ├── resolver.go          # DependencyGraph resolution; parsePolicyLayer Gemara-only (R39)
+│   ├── resolver_test.go     # ResolvePolicyGraph, parsePolicyLayer, extractFromGemaraPolicy (R56)
 │   ├── assessment.go        # ExtractAssessmentConfigs, GroupByEvaluator, ValidateGlobalVars
-│   └── generation_state.go  # GenerationState: per-policy digest persistence (R37)
+│   ├── assessment_test.go   # GroupByEvaluator, ExtractAssessmentConfigs, ValidateGlobalVars (R56)
+│   ├── loader_test.go       # ResolveVersion, LoadLayerByMediaType, PolicyExists (R56)
+│   ├── generation_state.go  # GenerationState: per-policy digest persistence (R37)
+│   └── generation_state_test.go  # Save/load round-trip, IsFresh, corrupt state (R56)
 ├── registry/
 │   ├── client.go            # OCI registry client (oras-go)
 │   ├── auth.go              # NewCredentialFunc() via oras-credentials-go (R6, R24)
 │   ├── fetcher.go           # Fetcher interface
 │   └── resolver.go          # GetDefinitions, DefinitionVersion
 └── terminal/
-    ├── spinner.go           # Animated braille spinner — charmbracelet/bubbles wrapper (Constitution V)
+    ├── spinner.go           # Animated braille spinner — charmbracelet/bubbles/spinner (Constitution V)
     ├── spinner_test.go      # Spinner model tests (View, stopMsg→Quit, tick)
-    └── table.go             # Reusable charmbracelet table helpers: Model, ShowPlainTable (R38)
+    └── table.go             # ShowPlainTable (sole renderer) + IsTTY() (Session 2026-02-26e; lipgloss removed)
 
 pkg/
 └── plugin/
@@ -309,6 +377,7 @@ pkg/
     ├── plugin.go            # Handshake, GRPCEvaluatorPlugin, Serve()
     ├── manager.go           # Scanning provider lifecycle (discovery, load, route)
     ├── discovery.go         # Filesystem scanning provider discovery
+    ├── discovery_test.go    # DiscoverPlugins, scanDir, expandPath — real temp dir + mock executables (R56)
     ├── initialization.go    # NewClient(path, logger) — simplified (R21)
     └── export_test.go       # RegisterPluginForTest (test-only)
 

@@ -33,7 +33,7 @@ type CheckResult struct {
 	Blocking bool
 }
 
-// ProviderHealth holds HealthCheck-declared variable requirements for a
+// ProviderHealth holds Describe-declared variable requirements for a
 // single scanning provider, collected during provider discovery (R51).
 type ProviderHealth struct {
 	EvaluatorID             string
@@ -120,8 +120,8 @@ func CheckConfig(configPath string) CheckResult {
 	}
 }
 
-// CheckProviders discovers providers and runs HealthCheck on each.
-// Returns both diagnostic results and HealthCheck data for variable validation (R51).
+// CheckProviders discovers providers and runs Describe on each.
+// Returns both diagnostic results and Describe data for variable validation (R51).
 // pluginLogOutput receives go-plugin subprocess stderr.
 func CheckProviders(providerDir string, pluginLogOutput io.Writer) ([]CheckResult, []ProviderHealth) {
 	if _, err := os.Stat(providerDir); os.IsNotExist(err) {
@@ -172,12 +172,12 @@ func CheckProviders(providerDir string, pluginLogOutput io.Writer) ([]CheckResul
 	var results []CheckResult
 	var healthData []ProviderHealth
 	for _, lp := range plugins {
-		resp, hcErr := lp.Client.HealthCheck(ctx, &plugin.HealthCheckRequest{})
-		if hcErr != nil {
+		resp, descErr := lp.Client.Describe(ctx, &plugin.DescribeRequest{})
+		if descErr != nil {
 			results = append(results, CheckResult{
 				Name:     fmt.Sprintf("provider/%s", lp.Info.EvaluatorID),
 				Status:   StatusFail,
-				Message:  fmt.Sprintf("HealthCheck failed: %v", hcErr),
+				Message:  fmt.Sprintf("Describe failed: %v", descErr),
 				Blocking: true,
 			})
 			continue
@@ -335,7 +335,7 @@ func CheckCache(cacheDir string) CheckResult {
 	}
 }
 
-// CheckVariables validates HealthCheck-declared required variables against
+// CheckVariables validates Describe-declared required variables against
 // workspace config. Global variables are checked against config.variables;
 // target variables are checked against relevant config.targets[].variables
 // using policy → evaluator → target mapping (R51, R52).
@@ -358,20 +358,24 @@ func CheckVariables(cfg *complytime.WorkspaceConfig, healthData []ProviderHealth
 	}
 
 	evaluatorTargets := make(map[string][]complytime.TargetConfig)
+	resolveFailures := 0
 	if resolver != nil {
 		for _, target := range cfg.Targets {
 			for _, pid := range target.Policies {
 				entry, found := complytime.FindPolicy(cfg.Policies, pid)
 				if !found {
+					resolveFailures++
 					continue
 				}
 				ref := complytime.ParsePolicyRef(entry.URL)
 				version, err := resolver.ResolveVersion(ref.Repository, ref.Version)
 				if err != nil {
+					resolveFailures++
 					continue
 				}
 				graph, err := resolver.ResolvePolicyGraph(ref.Repository, version)
 				if err != nil {
+					resolveFailures++
 					continue
 				}
 				configs := policy.ExtractAssessmentConfigs(ref.Repository, graph)
@@ -395,6 +399,8 @@ func CheckVariables(cfg *complytime.WorkspaceConfig, healthData []ProviderHealth
 		}
 
 		targets := evaluatorTargets[ph.EvaluatorID]
+		unmappedTargetVars := len(ph.RequiredTargetVariables) > 0 && len(targets) == 0
+
 		targetTotal := 0
 		targetResolved := 0
 		var missingTargetVars []string
@@ -412,11 +418,20 @@ func CheckVariables(cfg *complytime.WorkspaceConfig, healthData []ProviderHealth
 
 		allGlobalPresent := globalResolved == globalTotal
 		allTargetPresent := targetResolved == targetTotal
+		if unmappedTargetVars && (resolver == nil || resolveFailures > 0) {
+			allTargetPresent = false
+		}
 		name := fmt.Sprintf("variables/%s", ph.EvaluatorID)
 
 		if allGlobalPresent && allTargetPresent {
-			msg := fmt.Sprintf("%d/%d global vars, %d/%d target vars",
-				globalResolved, globalTotal, targetResolved, targetTotal)
+			var msg string
+			if unmappedTargetVars {
+				msg = fmt.Sprintf("%d/%d global vars, no target mapping for this evaluator",
+					globalResolved, globalTotal)
+			} else {
+				msg = fmt.Sprintf("%d/%d global vars, %d/%d target vars",
+					globalResolved, globalTotal, targetResolved, targetTotal)
+			}
 			results = append(results, CheckResult{
 				Name: name, Status: StatusPass, Message: msg, Blocking: true,
 			})
@@ -428,7 +443,10 @@ func CheckVariables(cfg *complytime.WorkspaceConfig, healthData []ProviderHealth
 				globalPart = fmt.Sprintf("%d/%d global vars — missing %s",
 					globalResolved, globalTotal, joinNames(missingGlobals))
 			}
-			if allTargetPresent {
+			if unmappedTargetVars {
+				targetPart = fmt.Sprintf("target vars not validated — %s",
+					unmappedReason(resolver, resolveFailures))
+			} else if allTargetPresent {
 				targetPart = fmt.Sprintf("%d/%d target vars", targetResolved, targetTotal)
 			} else {
 				targetPart = fmt.Sprintf("%d/%d target vars — missing %s",
@@ -454,18 +472,29 @@ func CheckVariables(cfg *complytime.WorkspaceConfig, healthData []ProviderHealth
 					Blocking: false,
 				})
 			}
-			for _, target := range targets {
+			if unmappedTargetVars {
 				for _, reqVar := range ph.RequiredTargetVariables {
-					status := complytime.StatusPassed
-					if _, ok := target.Variables[reqVar]; !ok {
-						status = complytime.StatusFailed
-					}
 					results = append(results, CheckResult{
 						Name:     fmt.Sprintf("variables/%s/detail", ph.EvaluatorID),
 						Status:   StatusPass,
-						Message:  fmt.Sprintf("   target[%s]: %s %s", target.ID, reqVar, status),
+						Message:  fmt.Sprintf("   target: %s (not validated)", reqVar),
 						Blocking: false,
 					})
+				}
+			} else {
+				for _, target := range targets {
+					for _, reqVar := range ph.RequiredTargetVariables {
+						status := complytime.StatusPassed
+						if _, ok := target.Variables[reqVar]; !ok {
+							status = complytime.StatusFailed
+						}
+						results = append(results, CheckResult{
+							Name:     fmt.Sprintf("variables/%s/detail", ph.EvaluatorID),
+							Status:   StatusPass,
+							Message:  fmt.Sprintf("   target[%s]: %s %s", target.ID, reqVar, status),
+							Blocking: false,
+						})
+					}
 				}
 			}
 		}
@@ -600,6 +629,16 @@ func countResolved(required []string, vars map[string]string) (resolved, total i
 		}
 	}
 	return resolved, total
+}
+
+func unmappedReason(resolver PolicyGraphResolver, resolveFailures int) string {
+	if resolver == nil {
+		return "no policy resolver available"
+	}
+	if resolveFailures > 0 {
+		return fmt.Sprintf("policy graph unresolved (%d error(s)) — run complyctl get", resolveFailures)
+	}
+	return "evaluator not referenced by any cached policy"
 }
 
 func joinNames(names []string) string {

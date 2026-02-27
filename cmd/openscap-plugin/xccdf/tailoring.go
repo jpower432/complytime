@@ -12,8 +12,6 @@ import (
 
 	xccdf "github.com/complytime/complyctl/cmd/openscap-plugin/xccdftype"
 	"github.com/complytime/complyctl/pkg/plugin"
-
-	"github.com/complytime/complyctl/cmd/openscap-plugin/config"
 )
 
 const (
@@ -243,9 +241,7 @@ func getTailoringProfile(profileId string, dsPath string, configuration []plugin
 	return tailoringProfile, nil
 }
 
-func PolicyToXML(configuration []plugin.AssessmentConfiguration, config *config.Config) (string, error) {
-	datastreamPath := config.Files.Datastream
-	profileId := config.Parameters.Profile
+func PolicyToXML(configuration []plugin.AssessmentConfiguration, datastreamPath, profileId string) (string, error) {
 
 	if len(configuration) == 0 {
 		return "", fmt.Errorf("assessment configuration is empty")

@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/gemaraproj/go-gemara"
 
 	"github.com/complytime/complyctl/internal/complytime"
@@ -16,9 +15,11 @@ import (
 )
 
 type nonPassingEntry struct {
-	result  gemara.Result
-	emoji   string
-	message string
+	requirementID string
+	controlID     string
+	result        gemara.Result
+	emoji         string
+	message       string
 }
 
 func nonPassingSortPriority(r gemara.Result) int {
@@ -51,11 +52,10 @@ func matchingStepMessage(steps []plugin.Step, target gemara.Result) string {
 	return ""
 }
 
-// FormatScanSummary builds ActionError-style post-scan output per R45/FR-037.
-// Only non-passing results are listed individually (emoji + message per line).
-// Passed results appear in the single-row totals table only.
-// Non-passing lines are ordered by severity: failed -> error -> skipped.
-func FormatScanSummary(assessments []plugin.AssessmentLog) string {
+// FormatScanSummary builds a report-style post-scan output per FR-037.
+// Intro text, plain aligned text table of non-passing results, compact totals.
+// See spec.md Session 2026-02-26e.
+func FormatScanSummary(assessments []plugin.AssessmentLog, reqToControl map[string]string, policyID string, targetIDs []string) string {
 	var passCount, failCount, skipCount, errCount int
 	var entries []nonPassingEntry
 
@@ -63,29 +63,40 @@ func FormatScanSummary(assessments []plugin.AssessmentLog) string {
 		a := &assessments[i]
 		result := aggregateResultFromSteps(a.Steps)
 
+		ctrlID := reqToControl[a.RequirementID]
+		if ctrlID == "" {
+			ctrlID = "-"
+		}
+
 		switch result {
 		case gemara.Passed:
 			passCount++
 		case gemara.Failed:
 			failCount++
 			entries = append(entries, nonPassingEntry{
-				result:  result,
-				emoji:   complytime.StatusFailed,
-				message: matchingStepMessage(a.Steps, result),
+				requirementID: a.RequirementID,
+				controlID:     ctrlID,
+				result:        result,
+				emoji:         complytime.StatusFailed,
+				message:       matchingStepMessage(a.Steps, result),
 			})
 		case gemara.NotApplicable, gemara.NotRun:
 			skipCount++
 			entries = append(entries, nonPassingEntry{
-				result:  result,
-				emoji:   complytime.StatusSkipped,
-				message: matchingStepMessage(a.Steps, result),
+				requirementID: a.RequirementID,
+				controlID:     ctrlID,
+				result:        result,
+				emoji:         complytime.StatusSkipped,
+				message:       matchingStepMessage(a.Steps, result),
 			})
 		default:
 			errCount++
 			entries = append(entries, nonPassingEntry{
-				result:  result,
-				emoji:   complytime.StatusError,
-				message: matchingStepMessage(a.Steps, result),
+				requirementID: a.RequirementID,
+				controlID:     ctrlID,
+				result:        result,
+				emoji:         complytime.StatusError,
+				message:       matchingStepMessage(a.Steps, result),
 			})
 		}
 	}
@@ -94,26 +105,26 @@ func FormatScanSummary(assessments []plugin.AssessmentLog) string {
 		return nonPassingSortPriority(a.result) - nonPassingSortPriority(b.result)
 	})
 
-	var b strings.Builder
+	total := len(assessments)
+	intro := fmt.Sprintf("Scan: %s | Target: %s | %d requirements",
+		policyID, strings.Join(targetIDs, ", "), total)
+
+	headers := []string{"REQUIREMENT ID", "CONTROL ID", "STATUS", "MESSAGE"}
+	var rows [][]string
 	for _, e := range entries {
-		fmt.Fprintf(&b, "%s %s\n", e.emoji, e.message)
+		rows = append(rows, []string{e.requirementID, e.controlID, e.emoji, e.message})
 	}
 
-	if len(entries) > 0 {
-		b.WriteString("\n")
-	}
+	conclusion := fmt.Sprintf("%d requirements: %d passed, %d failed, %d skipped, %d error",
+		total, passCount, failCount, skipCount, errCount)
 
-	totalsRow := table.Row{
-		fmt.Sprintf("%d %s", passCount, complytime.StatusPassed),
-		fmt.Sprintf("%d %s", failCount, complytime.StatusFailed),
-		fmt.Sprintf("%d %s", skipCount, complytime.StatusSkipped),
-		fmt.Sprintf("%d %s", errCount, complytime.StatusError),
+	var b strings.Builder
+	fmt.Fprintln(&b, intro)
+	if len(rows) > 0 {
+		fmt.Fprintln(&b)
+		terminal.ShowPlainTable(&b, headers, rows)
+		fmt.Fprintln(&b)
 	}
-	cols := terminal.AutoColumnWidths([]table.Column{
-		{Title: "Passed"}, {Title: "Failed"}, {Title: "Skipped"}, {Title: "Error"},
-	}, []table.Row{totalsRow}, 2)
-
-	b.WriteString(renderStyledTable(cols, []table.Row{totalsRow}))
-	b.WriteString("\n")
+	fmt.Fprintln(&b, conclusion)
 	return b.String()
 }

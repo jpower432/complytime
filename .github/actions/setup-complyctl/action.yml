@@ -2,27 +2,27 @@ name: "Setup complyctl environment"
 description: "Build complyctl, test plugin, and mock OCI registry for integration testing"
 
 runs:
-  using: composite
-  steps:
-    - name: Install dependencies
-      run: dnf install -y make git jq curl
-      shell: bash
+    using: composite
+    steps:
+        - name: Install dependencies
+          run: dnf install -y make git jq curl
+          shell: bash
 
-    - name: Configure Git for safe directory
-      run: git config --global --add safe.directory /__w/complyctl/complyctl
-      shell: bash
+        - name: Configure Git for safe directory
+          run: git config --global --add safe.directory /__w/complyctl/complyctl
+          shell: bash
 
-    - name: Set up Go
-      uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
-      with:
-        go-version-file: './go.mod'
+        - name: Set up Go
+          uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+          with:
+              go-version-file: './go.mod'
 
-    - name: Build binaries
-      run: make build build-test-plugin
-      shell: bash
+        - name: Build binaries
+          run: make build build-test-plugin
+          shell: bash
 
-    - name: Install test plugin
-      run: |
-        mkdir -p ~/.complytime/providers
-        cp bin/complytime-providers-test ~/.complytime/providers/
-      shell: bash
+        - name: Install test plugin
+          run: |
+              mkdir -p ~/.complytime/providers
+              cp bin/complytime-providers-test ~/.complytime/providers/
+          shell: bash

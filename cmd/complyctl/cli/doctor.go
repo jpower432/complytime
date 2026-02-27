@@ -5,7 +5,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -23,7 +22,8 @@ func doctorCmd(common *Common) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Run pre-flight diagnostics on the workspace",
-		Args:  cobra.NoArgs,
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runDoctor(verbose)
 		},
@@ -73,9 +73,8 @@ func runDoctor(verbose bool) error {
 		cfg = loaded
 	}
 
-	policiesCacheDir := filepath.Join(cacheDir, complytime.PoliciesSubdir)
 	var resolver doctor.PolicyGraphResolver
-	cacheMgr := cache.NewCache(policiesCacheDir)
+	cacheMgr := cache.NewCache(cacheDir)
 	loader := policy.NewLoader(cacheMgr)
 	resolver = policy.NewResolver(loader)
 
@@ -83,22 +82,32 @@ func runDoctor(verbose bool) error {
 
 	results := doctor.Run(cfg, configPath, pluginDir, cacheDir, resolver, versionResolver, verbose, logFile)
 
+	fmt.Println("Running workspace diagnostics...")
+	fmt.Println()
+
+	var passCount, failCount, warnCount int
 	hasBlockingFailure := false
 	for _, r := range results {
 		var emoji string
 		switch r.Status {
 		case doctor.StatusPass:
 			emoji = complytime.StatusPassed
+			passCount++
 		case doctor.StatusFail:
 			emoji = complytime.StatusFailed
+			failCount++
 		case doctor.StatusWarn:
 			emoji = complytime.StatusSkipped
+			warnCount++
 		}
 		fmt.Printf("%s %s: %s\n", emoji, r.Name, r.Message)
 		if r.Blocking && r.Status == doctor.StatusFail {
 			hasBlockingFailure = true
 		}
 	}
+
+	total := passCount + failCount + warnCount
+	fmt.Printf("\n%d checks: %d passed, %d failed, %d warnings\n", total, passCount, failCount, warnCount)
 
 	if hasBlockingFailure {
 		return fmt.Errorf("one or more blocking checks failed")
