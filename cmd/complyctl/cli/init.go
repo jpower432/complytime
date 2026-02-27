@@ -21,8 +21,8 @@ func initCmd(common *Common) *cobra.Command {
 		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:          "init",
-		Short:        "Create a workspace configuration file",
+		Use:               "init",
+		Short:             "Create a workspace configuration file",
 		SilenceUsage:      true,
 		Example:           "complyctl init",
 		Args:              cobra.NoArgs,

@@ -2,7 +2,7 @@
 # https://megalinter.io/latest/supported-linters/
 ADDITIONAL_EXCLUDED_DIRECTORIES:
     - vendor
-    - ./cmd/openscap-plugin/vendor
+FILTER_REGEX_EXCLUDE: (vendor/)
 ENABLE_LINTERS:
     - ACTION_ACTIONLINT
     - ANSIBLE_ANSIBLE_LINT

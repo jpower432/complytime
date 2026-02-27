@@ -59,7 +59,7 @@ func TestScanDir_NonExecutableFile(t *testing.T) {
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, complytime.PluginExecutablePrefix+"noexec")
-	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh"), 0644))
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh"), 0644)) // #nosec
 
 	plugins, err := scanDir(dir)
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestScanDir_NonExecutableFile(t *testing.T) {
 func TestScanDir_DirectoryEntriesSkipped(t *testing.T) {
 	dir := t.TempDir()
 	subdir := filepath.Join(dir, complytime.PluginExecutablePrefix+"subdir")
-	require.NoError(t, os.Mkdir(subdir, 0755))
+	require.NoError(t, os.Mkdir(subdir, 0755)) // #nosec
 
 	plugins, err := scanDir(dir)
 	require.NoError(t, err)
@@ -155,5 +155,5 @@ func TestScanDir_UserDirPrecedence(t *testing.T) {
 func createExecutable(t *testing.T, dir, name string) {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"), 0755))
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"), 0755)) // #nosec
 }

@@ -26,8 +26,8 @@ func getCmd(common *Common) *cobra.Command {
 		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:          "get [flags]",
-		Short:        "Fetch new/modified policies from OCI registry and update cache",
+		Use:               "get [flags]",
+		Short:             "Fetch new/modified policies from OCI registry and update cache",
 		SilenceUsage:      true,
 		Example:           "complyctl get",
 		Args:              cobra.NoArgs,

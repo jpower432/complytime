@@ -20,8 +20,8 @@ func doctorCmd(common *Common) *cobra.Command {
 	_ = common
 	var verbose bool
 	cmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Run pre-flight diagnostics on the workspace",
+		Use:               "doctor",
+		Short:             "Run pre-flight diagnostics on the workspace",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(_ *cobra.Command, _ []string) error {

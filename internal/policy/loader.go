@@ -46,7 +46,7 @@ func (l *Loader) ResolveVersion(policyID, configVersion string) (string, error) 
 
 	cached, _ := l.GetCachedVersions(policyID)
 	return "", fmt.Errorf(
-		"policy %s@%s not in cache (run 'complytime get' first); cached: %v",
+		"policy %s@%s not in cache (run 'complyctl get' first); cached: %v",
 		policyID, version, cached,
 	)
 }

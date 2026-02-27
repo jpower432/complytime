@@ -31,9 +31,9 @@ func generateCmd(common *Common) *cobra.Command {
 		Common: common,
 	}
 	cmd := &cobra.Command{
-		Use:   "generate [flags]",
-		Short: "Generate policy graph and invoke plugins",
-		Example: `complyctl generate --policy-id nist-800-53-r5`,
+		Use:               "generate [flags]",
+		Short:             "Generate policy graph and invoke plugins",
+		Example:           `complyctl generate --policy-id nist-800-53-r5`,
 		SilenceUsage:      true,
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,

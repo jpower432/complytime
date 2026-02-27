@@ -76,4 +76,3 @@ func TestGroupByEvaluator_EmptyConfigs(t *testing.T) {
 	groups := GroupByEvaluator(nil, graph)
 	assert.Empty(t, groups)
 }
-
