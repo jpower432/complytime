@@ -9,43 +9,44 @@ A lightweight compliance runtime that pulls [Gemara](https://gemara.openssf.org/
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Host                                                           │
-│                                                                 │
-│  ┌──────────────┐      complyctl get   ┌──────────────────────┐ │
-│  │  OCI Registry │ ◄────────────────── │                      │ │
-│  │              │  ──────────────────► │      complyctl CLI   │ │
-│  │  Gemara      │   catalog + policy   │                      │ │
-│  │  policies    │   layers (YAML)      │  init / get / list   │ │
-│  └──────────────┘                      │  generate / scan     │ │
-│                                        │  version             │ │
-│                                        └──────┬───────┬───────┘ │
-│                                               │       │         │
-│                                  ┌────────────┘       │         │
-│                                  │                    │         │
-│                                  ▼                    ▼         │
-│                        ┌──────────────┐    ┌────────────────┐   │
-│                        │    Cache     │    │    Plugins     │   │
-│                        │              │    │                │   │
-│                        │ ~/.complytime│    │ ~/.complytime/ │   │
-│                        │  policies/   │    │  plugins/      │   │
-│                        │  state.json  │    │                │   │
-│                        │              │    │ complytime-    │   │
-│                        │ OCI Layout   │    │  plugin-*      │   │
-│                        │ per policy   │    │                │   │
-│                        └──────────────┘    │ gRPC: Health,  │   │
-│                                            │ Generate, Scan │   │
-│  ┌──────────────┐                          └────────────────┘   │
-│  │  Workspace   │                                               │
-│  │              │  complytime.yaml defines:                     │
-│  │  ./complytime│   - registry URL                              │
-│  │    .yaml     │   - policy IDs + versions                     │
-│  │              │   - targets + variables                       │
-│  │  ./gemara-   │   - parameter overrides                       │
-│  │    scan/     │                                               │
-│  │   (output)   │  Scan output (EvaluationLog, OSCAL,           │
-│  └──────────────┘   SARIF, Markdown) written to workspace       │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Host                                                            │
+│                                                                  │
+│  ┌──────────────┐      complyctl get   ┌───────────────────────┐ │
+│  │ OCI Registry │ ◄──────────────────  │                       │ │
+│  │              │  ───────────────────►│    complyctl CLI      │ │
+│  │  Gemara      │   catalog + policy   │                       │ │
+│  │  policies    │   layers (YAML)      │ init / get / list     │ │
+│  └──────────────┘                      │ generate / scan       │ │
+│                                        │ doctor / providers    │ │
+│                                        │ version               │ │
+│                                        └─────┬────────┬────────┘ │
+│                                              │        │          │
+│                                 ┌────────────┘        │          │
+│                                 │                     │          │
+│                                 ▼                     ▼          │
+│                       ┌──────────────┐    ┌────────────────┐     │
+│                       │    Cache     │    │   Providers    │     │
+│                       │              │    │                │     │
+│                       │ ~/.complytime│    │ ~/.complytime/ │     │
+│                       │  /policies/  │    │  providers/    │     │
+│                       │  state.json  │    │                │     │
+│                       │              │    │ complyctl-     │     │
+│                       │ OCI Layout   │    │  provider-*    │     │
+│                       │ per policy   │    │                │     │
+│                       └──────────────┘    │ gRPC: Describe │     │
+│                                           │ Generate, Scan │     │
+│  ┌──────────────┐                         └────────────────┘     │
+│  │  Workspace   │                                                │
+│  │              │  complytime.yaml defines:                      │
+│  │ ./complytime │   - registry URL                               │
+│  │   .yaml      │   - policy IDs + versions                      │
+│  │              │   - targets + variables                        │
+│  │ ./.comply-   │                                                │
+│  │   time/scan/ │                                                │
+│  │  (output)    │  Scan output (EvaluationLog, OSCAL,            │
+│  └──────────────┘   SARIF, Markdown) written to workspace        │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 **Components:**
@@ -55,7 +56,7 @@ A lightweight compliance runtime that pulls [Gemara](https://gemara.openssf.org/
 | **OCI Registry** | Remote store for Gemara policies. Each policy is a multi-layer OCI manifest containing catalog, guidance, and policy/assessment YAML layers distinguished by media type. |
 | **Workspace** | Current directory containing `complytime.yaml`. Defines which registry, policies, and targets to use. Scan output lands in `./.complytime/scan/`. |
 | **Cache** | Local OCI Layout stores under `~/.complytime/policies/`. One store per policy ID. `state.json` tracks digests for incremental sync. |
-| **Providers** | Standalone executables in `~/.complytime/providers/` matching the `complyctl-provider-*` naming convention. Communicate via gRPC (`HealthCheck`, `Generate`, `Scan`). Evaluator ID derived from filename. |
+| **Providers** | Standalone executables in `~/.complytime/providers/` matching the `complyctl-provider-*` naming convention. Communicate via gRPC (`Describe`, `Generate`, `Scan`). Evaluator ID derived from filename. |
 | **CLI** | Orchestrates the workflow: fetch policies, resolve dependency graphs, dispatch to plugins, produce compliance reports. |
 
 ## Documentation
@@ -63,17 +64,19 @@ A lightweight compliance runtime that pulls [Gemara](https://gemara.openssf.org/
 - [Installation](./docs/INSTALLATION.md)
 - [Quick Start](./docs/QUICK_START.md)
 - [Plugin Guide](./docs/PLUGIN_GUIDE.md)
-- [E2E Testing](./docs/E2E_INTEGRATION.md)
+- [E2E Testing](./tests/e2e/README.md)
 
 ## CLI Commands
 
 | Command | Description |
 |:---|:---|
-| `init` | Initialize workspace and fetch policies from OCI registry |
+| `init` | Create a workspace configuration file |
 | `get` | Fetch new/modified policies from OCI registry and update cache |
 | `list` | List cached Gemara policies |
 | `generate` | Generate policy graph and invoke plugins |
 | `scan` | Scan targets and produce compliance reports |
+| `doctor` | Run pre-flight diagnostics on the workspace |
+| `providers` | List discovered scanning providers and their health status |
 | `version` | Print version |
 
 Global flag: `--debug` / `-d` — output debug logs.
@@ -81,14 +84,10 @@ Global flag: `--debug` / `-d` — output debug logs.
 ### `init`
 
 ```bash
-# Interactive — prompts for registry URL, policy IDs, targets
-complyctl init
-
-# Non-interactive — validates existing complytime.yaml, then fetches policies
 complyctl init
 ```
 
-When `complytime.yaml` already exists, `init` validates and runs `get` automatically.
+Creates a workspace configuration file (`complytime.yaml`). When one already exists, validates and runs `get` automatically.
 
 ### `get`
 
@@ -102,13 +101,11 @@ Performs incremental sync from the OCI registry defined in `complytime.yaml`. On
 
 ```bash
 complyctl list
-complyctl list --plain
 complyctl list --policy-id nist-800-53-r5
 ```
 
 | Flag | Description |
 |:---|:---|
-| `--plain` | Minimal formatting (no interactive table) |
 | `--policy-id` | Filter output to a single policy |
 
 ### `generate`
@@ -146,37 +143,50 @@ complyctl scan --policy-id nist-800-53-r5 --format sarif
 
 Output written to `./.complytime/scan/`.
 
+### `doctor`
+
+```bash
+complyctl doctor
+complyctl doctor --verbose
+```
+
+Validates workspace configuration, plugin health, cache integrity, and provider variable requirements. Use `--verbose` for per-provider variable detail.
+
+### `providers`
+
+```bash
+complyctl providers
+```
+
+Lists discovered scanning providers with their evaluator ID, path, health status, and version.
+
 ## Workspace Configuration
 
 ```yaml
 # complytime.yaml
-registry:
-  url: https://registry.example.com
 policies:
-  - id: nist-800-53-r5
-  - id: cis-benchmark
-    version: v1.0.0
+  - url: registry.example.com/policies/nist-800-53-r5@v1.0.0
+    id: nist
+  - url: registry.example.com/policies/cis-benchmark
+variables:
+  output_dir: /tmp/scan-results
 targets:
   - id: production-cluster
-    policy_ids:
-      - nist-800-53-r5
+    policies:
+      - nist
     variables:
       kubeconfig: /path/to/kubeconfig
-parameters:
-  - policy_id: nist-800-53-r5
-    parameter_id: session_timeout
-    value: "900"
+      api_token: ${MY_API_TOKEN}
 ```
 
 | Field | Description |
 |:---|:---|
-| `registry.url` | OCI registry base URL |
-| `policies[].id` | Policy identifier in the registry |
-| `policies[].version` | Optional pinned version (omit for latest) |
+| `policies[].url` | Full OCI reference (registry + repository + optional `@version`) |
+| `policies[].id` | Optional shortname; if omitted, derived from last path segment of URL |
+| `variables` | Workspace-scoped constants passed to plugins via Generate RPC |
 | `targets[].id` | Scan target identifier |
-| `targets[].policy_ids` | Policies to evaluate against this target |
-| `targets[].variables` | Plugin-specific key-value pairs (credentials, paths) |
-| `parameters[]` | Override policy-defined parameter values locally |
+| `targets[].policies` | List of effective policy IDs to evaluate against this target |
+| `targets[].variables` | Plugin-specific key-value pairs; supports `${VAR}` env substitution |
 
 ## Contributing
 

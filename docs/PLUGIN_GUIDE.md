@@ -26,34 +26,46 @@ Plugins implement the `Plugin` interface (defined in `pkg/plugin/manager.go`):
 
 ```go
 type Plugin interface {
-    HealthCheck(ctx context.Context, req *HealthCheckRequest) (*HealthCheckResponse, error)
+    Describe(ctx context.Context, req *DescribeRequest) (*DescribeResponse, error)
     Generate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error)
     Scan(ctx context.Context, req *ScanRequest) (*ScanResponse, error)
 }
 ```
 
-### HealthCheck
+### Describe
 
-Called during plugin discovery. Plugins that return `Healthy: false` or fail the RPC are skipped.
+Called during plugin discovery and `complyctl doctor` diagnostics. Returns plugin health, version, and declared variable requirements (`RequiredGlobalVariables`, `RequiredTargetVariables`). Plugins that return `Healthy: false` or fail the RPC are skipped during loading.
 
 ### Generate
 
-Called by `complyctl generate`. Receives assessment configurations (plan ID, requirement ID, parameters) for the plugin to prepare declarative policies in whatever format the underlying engine expects.
+Called by `complyctl generate`. Receives a three-tier variable model (R48):
+
+| Tier | Field | Source |
+|:---|:---|:---|
+| 1 — Global | `GlobalVariables` | `complytime.yaml` top-level `variables` |
+| 2 — Target | `TargetVariables` | `complytime.yaml` `targets[].variables` (one target per call) |
+| 3 — Test | `Configuration[].Parameters` | Per-requirement parameters from the assessment plan |
+
+The plugin prepares declarative policies in whatever format the underlying engine expects.
 
 ### Scan
 
-Called by `complyctl scan`. Receives targets (with variables) and requirement IDs. Returns `AssessmentLog` entries — one per requirement evaluated — each containing steps with pass/fail/skip/error results and a confidence score.
+Called by `complyctl scan`. Receives targets only — no requirement IDs are sent. The provider evaluates all requirements from Generate-time state (R47). Returns `AssessmentLog` entries — one per requirement evaluated — each containing steps with pass/fail/skip/error results and a `ConfidenceLevel` enum.
 
 ## Protobuf Contract
 
-The full protobuf definition lives at `specs/001-gemara-native-workflow/contracts/plugin.proto`. Key messages:
+The canonical protobuf definition lives at `api/plugin/plugin.proto`. Key types:
 
-| Message | Purpose |
+| Type | Purpose |
 |:---|:---|
+| `GenerateRequest` | Global variables, target variables, assessment configurations |
 | `AssessmentConfiguration` | Plan ID, requirement ID, parameters map |
 | `Target` | Target ID + plugin-defined variables |
-| `AssessmentLog` | Requirement ID, steps, message, confidence |
-| `Step` | Name, result (PASSED/FAILED/SKIPPED/ERROR), message |
+| `AssessmentLog` | Requirement ID, steps, message, confidence level |
+| `Step` | Name, result, message |
+| `DescribeResponse` | Health, version, required global/target variable names |
+| `ConfidenceLevel` | Enum: NOT_SET, UNDETERMINED, LOW, MEDIUM, HIGH |
+| `Result` | Enum: UNSPECIFIED, PASSED, FAILED, SKIPPED, ERROR |
 
 ## Authoring a Plugin (Go)
 
@@ -72,13 +84,19 @@ var _ plugin.Plugin = (*myPlugin)(nil)
 
 type myPlugin struct{}
 
-func (p *myPlugin) HealthCheck(_ context.Context, _ *plugin.HealthCheckRequest) (*plugin.HealthCheckResponse, error) {
-    return &plugin.HealthCheckResponse{Healthy: true, Version: "1.0.0"}, nil
+func (p *myPlugin) Describe(_ context.Context, _ *plugin.DescribeRequest) (*plugin.DescribeResponse, error) {
+    return &plugin.DescribeResponse{
+        Healthy: true,
+        Version: "1.0.0",
+        RequiredGlobalVariables: []string{"output_dir"},
+        RequiredTargetVariables: []string{"kubeconfig"},
+    }, nil
 }
 
 func (p *myPlugin) Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateResponse, error) {
+    _ = req.GlobalVariables
+    _ = req.TargetVariables
     for _, cfg := range req.Configuration {
-        // Translate assessment config into engine-native format
         _ = cfg.RequirementID
         _ = cfg.Parameters
     }
@@ -86,17 +104,17 @@ func (p *myPlugin) Generate(_ context.Context, req *plugin.GenerateRequest) (*pl
 }
 
 func (p *myPlugin) Scan(_ context.Context, req *plugin.ScanRequest) (*plugin.ScanResponse, error) {
-    assessments := make([]plugin.AssessmentLog, 0, len(req.RequirementIDs))
-    for _, reqID := range req.RequirementIDs {
+    var assessments []plugin.AssessmentLog
+    for _, target := range req.Targets {
         assessments = append(assessments, plugin.AssessmentLog{
-            RequirementID: reqID,
+            RequirementID: target.TargetID + "-check",
             Steps: []plugin.Step{{
                 Name:    "my-check",
                 Result:  plugin.ResultPassed,
                 Message: "check passed",
             }},
             Message:    "evaluation complete",
-            Confidence: 1.0,
+            Confidence: plugin.ConfidenceLevelHigh,
         })
     }
     return &plugin.ScanResponse{Assessments: assessments}, nil
@@ -125,9 +143,20 @@ The CLI routes requests based on **evaluator ID** extracted from the Gemara poli
 
 ## Variables
 
-Targets in `complytime.yaml` (runtime config) can define `variables` — arbitrary key-value pairs passed to plugins via `Target.Variables` in the Scan RPC. Use these for authentication tokens, connection strings, file paths, or any plugin-specific configuration. In comply-pack environments, the pack manifest (`complypack.yaml`) declares which providers are bundled; the runtime config remains the source for target variables.
+Plugins receive variables through a three-tier model (R48):
+
+| Tier | Config Location | Delivered Via | Scope |
+|:---|:---|:---|:---|
+| Global | `complytime.yaml` `variables` | `GenerateRequest.GlobalVariables` | Workspace-wide |
+| Target | `complytime.yaml` `targets[].variables` | `GenerateRequest.TargetVariables` (Generate) / `Target.Variables` (Scan) | Per-target |
+| Test | Assessment plan parameters | `AssessmentConfiguration.Parameters` | Per-requirement |
+
+Plugins declare their required variable names via the `Describe` RPC (`RequiredGlobalVariables`, `RequiredTargetVariables`). The `complyctl doctor` command validates these exist in the workspace config (R51).
 
 ```yaml
+variables:
+  output_dir: /tmp/scan-results
+
 targets:
   - id: production-cluster
     policy_ids:
