@@ -18,15 +18,24 @@
 - Q: Should the pack builder be part of `complyctl`? → A: No. `complypack` is a standalone binary (like `ocb` for the OpenTelemetry Collector). Lives in this repo at `cmd/complypack/` to share types from `internal/complytime/pack.go`.
 - Q: Where does `complyctl pack install` put files? → A: Defaults to workspace-local (`./bin/`, `./policies/`, `./complytime.yaml.example`). `-g` flag installs to global paths (`~/.complytime/providers/`, `~/.complytime/policies/`).
 
+### Session 2026-02-27
+
+- Q: How should pack artifacts handle platform/architecture targeting? → A: Single-platform per pack artifact. Manifest declares `os`/`arch`. `complyctl pack install` validates host compatibility before extraction. Multi-arch deferred to OCI Image Index in a future iteration.
+- Q: How should doctor verification be enforced before generate/scan? → A: Advisory only. Doctor is a debugging tool — it reports errors but `generate`/`scan` run regardless. No enforcement mechanism.
+- Q: What should happen on partial install failure? → A: Rollback. Clean up all files written during the current install attempt and report the error with cause.
+- Q: Can multiple packs coexist in the same workspace? → A: No. One pack per workspace. A second install replaces the first (overwrite prompt / `--force`). Users needing policies from multiple packs build a single combined pack.
+- Q: Should system dependencies declare an install command for remediation? → A: No install command — too platform-specific. Each dependency declares a `check` command and a documentation `url`. Doctor reports the failed check and links to the tool's documentation.
+
 ## Scope
 
 ### In Scope
 
-- **`complypack` CLI binary** (`cmd/complypack/`): `build`, `push`, `pull`, `doctor` subcommands for platform engineers
+- **`complypack` CLI binary**: `build`, `push`, `pull`, `doctor` subcommands for platform engineers
 - **`complyctl pack install`** subcommand: Unpacks an OCI pack artifact into the workspace (or global paths with `-g`)
 - **`COMPLYTIME_PROVIDER_DIR`** env var: Overrides default provider discovery path so workspace-local `./bin/` providers are found
-- **OCI artifact format**: Pack distributed as a single OCI artifact containing provider binaries, pre-cached policy OCI layouts, `complypack.yaml` manifest, and `complytime.yaml.example`
-- **Doctor dual-file mode**: When `complypack.yaml` is present alongside `complytime.yaml`, `complyctl doctor` validates both
+- **OCI artifact format**: Pack distributed as a single OCI artifact containing provider binaries, pre-cached Gemara policy OCI layouts, `complypack.yaml` manifest, and `complytime.yaml.example`
+- **Doctor as debugging tool**: When `complypack.yaml` is present alongside `complytime.yaml`, `complyctl doctor` validates both and reports issues. Advisory only — does not block `generate` or `scan`
+- **`fedora-complypack` reference pack**: First comply-pack, bundling all supported Fedora policies, the OpenSCAP provider plugin, OSCAL content dependencies, and SCAP Security Guide content
 
 ### Out of Scope
 
@@ -34,16 +43,17 @@
 - Pack runtime mode in `complyctl` (no `pack` field in `WorkspaceConfig`)
 - Auto-update or version management for installed packs
 - Pack signing or verification (defer to OCI signing standards like cosign)
+- Multi-arch pack artifacts via OCI Image Index (single-platform per artifact for now)
 
 ## User Scenarios & Testing
 
-### User Story 1 — Build and Publish a Comply-Pack (Priority: P1)
+### User Story 1 — Build and Publish the `fedora-complypack` (Priority: P1)
 
-A platform engineer curates a set of Gemara policies and scanning providers for their org's Fedora workstations. They build a comply-pack and publish it to the org's OCI registry so admins can install it.
+A platform engineer builds the `fedora-complypack` — the reference comply-pack bundling all supported Fedora Gemara policies, the OpenSCAP provider plugin, OSCAL content dependencies, and SCAP Security Guide content. They publish it to the org's OCI registry so admins can install it and hit the ground running.
 
-**Why this priority**: Without a buildable, publishable pack, the entire distribution pipeline doesn't exist.
+**Why this priority**: Without a buildable, publishable pack, the entire distribution pipeline doesn't exist. The `fedora-complypack` serves as the proving ground for the pack format and workflow.
 
-**Independent Test**: Run `complypack build` in a directory with `complypack.yaml`, verify the OCI artifact is assembled. Run `complypack push` to a test registry, verify the artifact is retrievable.
+**Independent Test**: Run `complypack build` in a directory with `complypack.yaml` (defining the Fedora policies, OpenSCAP plugin, and SCAP Security Guide content), verify the OCI artifact is assembled. Run `complypack push` to a test registry, verify the artifact is retrievable.
 
 **Acceptance Scenarios**:
 
@@ -93,37 +103,44 @@ A platform engineer needs to transfer a comply-pack to an airgapped environment 
 |:---|:---|
 | `complypack build` with missing provider binary | Error listing missing binary path + remediation |
 | `complypack build` with unreachable policy registry | Error listing unreachable URL + suggestion to check credentials |
-| `complyctl pack install` with existing `./bin/` or `./policies/` | Prompt for overwrite confirmation or use `--force` flag |
+| `complyctl pack install` with existing pack in workspace | Prompt for overwrite confirmation or use `--force` flag; replaces previous pack entirely |
 | `complyctl pack install` where OCI ref is not a valid pack artifact | Error: "not a valid comply-pack artifact" with expected media type |
 | `complyctl doctor` with `complypack.yaml` but missing bundled providers | Report missing binary paths from manifest with install remediation |
 | `complyctl doctor` with `complypack.yaml` but no `complytime.yaml` | Report: pack installed, config missing, suggest `cp complytime.yaml.example complytime.yaml` |
 | Pack policy ID not in consumer's `complytime.yaml` targets | Not an error — consumer selects subset of bundled policies |
-| System dependency check fails | Doctor reports failed check command + suggests install command from manifest |
+| System dependency check fails | Doctor reports failed kind/value check + links to dependency documentation URL from manifest |
+| `complyctl pack install` on incompatible platform | Error: "pack targets linux/amd64, host is linux/arm64" — no files extracted |
+| `complyctl pack install` fails mid-extraction (disk full, permission error) | Rollback: remove all files written during this attempt, report error with cause |
 
 ## Requirements
 
 ### Functional Requirements
 
 - **FR-201**: `complypack build` MUST read `complypack.yaml`, fetch all declared policies from their respective registries (each `PackPolicyEntry.url` is a full OCI reference) into OCI Layout directories, locate declared provider binaries, generate `complytime.yaml.example` with `PolicyEntry` URLs copied directly from manifest entries, and assemble the result as an OCI artifact
-- **FR-202**: `complypack push <ref>` MUST push the built OCI artifact to the specified registry reference using standard OCI distribution. Authentication MUST use `oras-credentials-go` (same as `complyctl`)
+- **FR-202**: `complypack push <ref>` MUST push the built OCI artifact to the specified registry reference using standard OCI distribution. Authentication MUST use the same credential mechanism as `complyctl`
 - **FR-203**: `complypack pull <ref>` MUST pull the OCI artifact to a local directory for inspection or offline handoff
 - **FR-204**: `complypack doctor` MUST validate the `complypack.yaml` for buildability: registry reachable, policies exist remotely, declared provider binaries exist on the local filesystem, system dependency `check` commands pass
-- **FR-205**: `complyctl pack install <oci-ref>` MUST pull the pack artifact and extract contents to the workspace: provider binaries to `./bin/`, policy OCI layouts to `./policies/`, `complypack.yaml` and `complytime.yaml.example` to `./`. With `-g` flag, install providers to `~/.complytime/providers/` and policies to `~/.complytime/policies/`
+- **FR-205**: `complyctl pack install <oci-ref>` MUST pull the pack artifact and extract contents to the workspace: provider binaries to `./bin/`, policy OCI layouts to `./policies/`, `complypack.yaml` and `complytime.yaml.example` to `./`. With `-g` flag, install providers to `~/.complytime/providers/` and policies to `~/.complytime/policies/`. One pack per workspace — installing a second pack replaces the first (overwrite prompt or `--force`)
 - **FR-206**: `complyctl` MUST support `COMPLYTIME_PROVIDER_DIR` environment variable to override the default provider discovery path (`~/.complytime/providers/`). When set, provider discovery scans the specified directory instead
 - **FR-207**: `complyctl doctor` MUST detect `complypack.yaml` presence and validate pack integrity alongside `complytime.yaml` config validity. Pack checks: provider binaries exist at expected paths, policy OCI layouts exist, system dependency `check` commands pass. If `complytime.yaml` absent but `complypack.yaml` present, report pack OK + config missing with `cp complytime.yaml.example complytime.yaml` guidance
 - **FR-208**: `complytime.yaml.example` generated by `complypack build` MUST use the standard `PolicyEntry` format from 001 — each policy as `url:` (copied from `PackPolicyEntry.URL`) + `id:` (from `PackPolicyEntry.ID`). Targets section MUST be a placeholder with a `local` target referencing all pack policies. Variables section MUST include `workspace: ./.complytime/scan`
+- **FR-209**: `complypack.yaml` MUST support declaring system dependencies with: name, a `kind`/`value` check for validation, and a documentation `url` for remediation. Doctor reports failed checks with a link to the dependency's documentation. For the `fedora-complypack`, this includes OSCAL content and SCAP Security Guide packages
+- **FR-210**: `complyctl doctor` MUST report actionable errors when pack verification fails, including specific remediation steps. Doctor is advisory — it does not block `generate` or `scan`
+- **FR-211**: `complyctl pack install` MUST read the `os`/`arch` declared in the pack manifest and verify compatibility with the host system before extracting any files. Incompatible platform MUST result in an error naming the expected and actual platform
+- **FR-212**: If `complyctl pack install` fails mid-extraction, it MUST roll back by removing all files written during the current install attempt and report the error with cause. No partial installs
 
 ### Non-Functional Requirements
 
 - **NFR-201**: Zero changes to `complyctl` runtime behavior for non-pack users. Pack support is additive
-- **NFR-202**: `complypack` binary MUST share types from `internal/complytime/pack.go` — no type duplication
+- **NFR-202**: `complypack` binary MUST share pack data types with `complyctl` — no type duplication across binaries
 - **NFR-203**: OCI artifact format MUST be pullable by standard OCI tools (`skopeo`, `oras`, `crane`)
 
 ### Key Entities
 
-- **Pack Artifact**: OCI artifact containing layers for provider binaries, policy OCI layouts, `complypack.yaml`, and `complytime.yaml.example`. Custom media types for layer identification
-- **Pack Manifest** (`complypack.yaml`): `PackManifest` struct from `internal/complytime/pack.go`. Each `PackPolicyEntry` carries its own `url` (full OCI reference) enabling multi-registry packs. No top-level `registry` field
+- **Pack Artifact**: OCI artifact containing layers for provider binaries, Gemara policy cache (OCI layouts), `complypack.yaml`, and `complytime.yaml.example`. Custom media types for layer identification
+- **Pack Manifest** (`complypack.yaml`): Declares target `os`/`arch`, provider plugins, Gemara policy entries (each with its own OCI reference URL enabling multi-registry packs), system dependencies with check commands, and supporting binaries. No top-level `registry` field. Single-platform per artifact; multi-arch deferred to OCI Image Index
 - **Example Config** (`complytime.yaml.example`): Standard `WorkspaceConfig` YAML with `PolicyEntry` URLs copied directly from pack manifest entries
+- **System Dependencies**: Named packages or tools a pack requires on the host system (e.g., OSCAL content, SCAP Security Guide). Each dependency declares a `check` command for validation and a documentation `url` for remediation guidance
 
 ## Success Criteria
 

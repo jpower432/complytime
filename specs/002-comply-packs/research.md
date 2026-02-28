@@ -26,13 +26,14 @@
 
 ## R2: Multi-Architecture Provider Binary Strategy
 
-**Decision**: Defer multi-arch to a future iteration. Each pack targets a single OS/architecture pair. The `platform.os` field in `complypack.yaml` documents the target. Build separate packs for separate platforms.
+**Decision**: Defer multi-arch to a future iteration. Each pack targets a single OS/architecture pair. The `platform.os` and `platform.arch` fields in `complypack.yaml` declare the target. `complyctl pack install` validates host `os`/`arch` compatibility before extracting any files — incompatible platform results in an error naming expected vs actual. Build separate packs for separate platforms.
 
-**Rationale**: Pack builder runs on the host platform and bundles host-native binaries. Cross-compilation adds complexity (CGO dependencies for OpenSCAP). Multi-arch OCI Index support can be added later without breaking the single-manifest format — OCI Index wraps manifests, so single-manifest packs are forward-compatible.
+**Rationale**: Pack builder runs on the host platform and bundles host-native binaries. Cross-compilation adds complexity (CGO dependencies for OpenSCAP). Multi-arch OCI Index support can be added later without breaking the single-manifest format — OCI Index wraps manifests, so single-manifest packs are forward-compatible. Install-time validation prevents silent binary mismatches.
 
 **Alternatives considered**:
 - OCI Index with platform-specific manifests now — rejected: premature complexity. No immediate multi-arch requirement
 - Fat binary approach — rejected: Go cross-compilation is simple but provider binaries may have C dependencies (OpenSCAP via CGO)
+- No host validation (user responsibility) — rejected: silent failures from wrong-arch binaries are harder to debug than a clear error at install time
 
 ## R3: Pack OCI Artifact Structure
 
@@ -118,15 +119,15 @@ With `-g`:
 
 ## R8: Doctor Pack Checks
 
-**Decision**: When `complypack.yaml` exists in the workspace, `complyctl doctor` runs additional pack-layer checks after standard config checks:
+**Decision**: When `complypack.yaml` exists in the workspace, `complyctl doctor` runs additional pack-layer checks after standard config checks. Doctor is advisory only — it reports issues but does not block `generate` or `scan`.
 
-| Check | Blocking | Description |
+| Check | Severity | Description |
 |:---|:---|:---|
-| Pack manifest valid | Yes | Parse + validate `complypack.yaml` via `LoadPackManifest()` + `ValidatePackManifest()` |
-| Provider binaries present | Yes | For each `PackProviderEntry`, verify binary exists at expected path (workspace `./bin/` or global `~/.complytime/providers/`) |
-| Policy caches present | Yes | For each `PackPolicyEntry`, verify OCI Layout dir exists at expected path |
-| System dependencies | No (warn) | For each `SystemDependency`, run `check` command. Fail = warn with `install` guidance |
+| Pack manifest valid | Error | Parse + validate `complypack.yaml` via `LoadPackManifest()` + `ValidatePackManifest()` |
+| Provider binaries present | Error | For each `PackProviderEntry`, verify binary exists at expected path (workspace `./bin/` or global `~/.complytime/providers/`) |
+| Policy caches present | Error | For each `PackPolicyEntry`, verify OCI Layout dir exists at expected path |
+| System dependencies | Warn | For each `SystemDependency`, run `check` command. Fail = warn with link to dependency's documentation `url` |
 
-**Rationale**: Pack checks validate the delivery mechanism. Config checks validate the runtime. Both are needed for a complete pre-flight diagnostic. System dependency checks are warnings because the admin may have installed packages via alternative methods.
+**Rationale**: Doctor is a debugging tool. Pack checks validate the delivery mechanism. Config checks validate the runtime. Both produce diagnostic output for the user to act on, but neither gates downstream commands. System dependency failures link to documentation URLs rather than suggesting install commands — avoids assuming the user's package manager.
 
-**Missing config handling**: If `complypack.yaml` present but `complytime.yaml` absent, doctor reports pack OK + config missing with `cp complytime.yaml.example complytime.yaml` guidance. This is a warning, not a blocking error — the admin may be in the process of setting up.
+**Missing config handling**: If `complypack.yaml` present but `complytime.yaml` absent, doctor reports pack OK + config missing with `cp complytime.yaml.example complytime.yaml` guidance. This is a warning — the admin may be in the process of setting up.

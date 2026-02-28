@@ -1,6 +1,6 @@
 # Data Model: Comply-Packs
 
-**Branch**: `002-comply-packs` | **Date**: 2026-02-25
+**Branch**: `002-comply-packs` | **Date**: 2026-02-27
 
 ## Entities
 
@@ -38,7 +38,7 @@ Pack manifest file (YAML). Defined in `internal/complytime/pack.go`. Top-level `
 | `id` | `string` | Yes | Pack identifier |
 | `version` | `string` | Yes | Semantic version |
 | `description` | `string` | No | Human-readable description |
-| `platform` | `PlatformConfig` | No | Target OS and datastream path |
+| `platform` | `PlatformConfig` | Yes | Target `os`/`arch` (single-platform per artifact) and datastream path |
 | `policies` | `[]PackPolicyEntry` | Yes (>=1) | Policies to bundle (each with its own OCI URL) |
 | `providers` | `[]PackProviderEntry` | Yes (>=1) | Provider binaries to bundle |
 | `system-dependencies` | `[]SystemDependency` | No | OS packages required at runtime |
@@ -46,6 +46,25 @@ Pack manifest file (YAML). Defined in `internal/complytime/pack.go`. Top-level `
 **Source**: `internal/complytime/pack.go` — `PackManifest` struct
 **Relationship**: `complypack build` reads this → fetches policies from their respective registries → assembles `PackArtifact` → pushes to registry. `complyctl pack install` extracts this from `PackArtifact` → writes to workspace.
 **Schema change**: `RegistryConfig` type removed from `config.go`. No longer used by any struct.
+
+**Sub-entity: PlatformConfig** (add `arch` field):
+
+| Field | Type | Required | Description |
+|:---|:---|:---|:---|
+| `os` | `string` | Yes | Target operating system (e.g., `linux`, `darwin`) |
+| `arch` | `string` | Yes | Target architecture (e.g., `amd64`, `arm64`). Used by `complyctl pack install` to validate host compatibility before extraction |
+| `datastream` | `string` | No | Path to SCAP datastream (platform-specific) |
+
+**Sub-entity: SystemDependency** (change `install` → `url`):
+
+| Field | Type | Required | Description |
+|:---|:---|:---|:---|
+| `name` | `string` | Yes | Dependency display name |
+| `kind` | `DependencyCheckKind` | Yes | Check type enum (`rpm`, `deb`, `path`) — safe, hardcoded verification |
+| `value` | `string` | Yes | Value for the check (package name or path) |
+| `url` | `string` | No | Documentation URL for remediation guidance. Doctor links to this on failure |
+
+**Change from prior version**: `Install` field (freeform install command) replaced by `URL` (documentation link). Avoids assuming the user's package manager and is portable across distributions.
 
 ---
 
@@ -89,19 +108,22 @@ Resolved extraction paths for `complyctl pack install`. Two modes: workspace-loc
 
 **Source**: New — `internal/pack/install.go`
 **Note**: `complypack.yaml` and `complytime.yaml.example` always go to workspace root regardless of `-g` flag — these are user-facing files.
+**Single-pack semantics**: One pack per workspace. If an existing pack is detected (by `complypack.yaml` presence), prompt for overwrite confirmation or accept `--force` flag. Second install replaces the first entirely.
+**Platform validation**: Before extracting, read `platform.os`/`platform.arch` from the pack manifest layer and compare to `runtime.GOOS`/`runtime.GOARCH`. Mismatch → error with expected vs actual, no files extracted.
+**Rollback**: Track all files written during extraction. On any error mid-extraction, remove all tracked files and report the error with cause. No partial installs.
 
 ---
 
-### DoctorPackCheck (extends existing Doctor)
+### DoctorPackCheck (extends existing Doctor — advisory only)
 
-Pack-layer diagnostic checks added to `complyctl doctor` when `complypack.yaml` is present.
+Pack-layer diagnostic checks added to `complyctl doctor` when `complypack.yaml` is present. Doctor is advisory — it reports issues with actionable remediation but does not block `generate` or `scan`.
 
-| Check | Blocking | Input | Pass Condition |
+| Check | Severity | Input | Pass Condition |
 |:---|:---|:---|:---|
-| Pack manifest valid | Yes | `complypack.yaml` | `LoadPackManifest()` + `ValidatePackManifest()` succeed |
-| Provider binaries present | Yes | `PackProviderEntry[]` | Each `binary` exists + executable at resolved path |
-| Policy caches present | Yes | `PackPolicyEntry[]` | OCI Layout dir exists at resolved path with valid `oci-layout` marker |
-| System dependencies | No (warn) | `SystemDependency[]` | Each `check` command exits 0 |
+| Pack manifest valid | Error | `complypack.yaml` | `LoadPackManifest()` + `ValidatePackManifest()` succeed |
+| Provider binaries present | Error | `PackProviderEntry[]` | Each `binary` exists + executable at resolved path |
+| Policy caches present | Error | `PackPolicyEntry[]` | OCI Layout dir exists at resolved path with valid `oci-layout` marker |
+| System dependencies | Warn | `SystemDependency[]` | Each `kind`/`value` check passes. Failure links to dependency's `url` |
 
 **Provider path resolution**: Check `COMPLYTIME_PROVIDER_DIR` first, then `./bin/`, then `~/.complytime/providers/`. First match wins.
 **Missing config guidance**: If `complypack.yaml` present but `complytime.yaml` absent → warn: "Pack installed. Run `cp complytime.yaml.example complytime.yaml` to create config."
@@ -145,12 +167,15 @@ complypack doctor ──→ PackManifest (validate)
                       └── System dependencies installed?
 
 complyctl pack install ──→ OCI Registry → pull PackArtifact
-                           ├── Extract by media type + annotation
+                           ├── Check existing pack (prompt overwrite / --force)
+                           ├── Validate platform.os/arch vs runtime.GOOS/GOARCH
+                           ├── Extract by media type + annotation (track written files)
                            │   ├── Providers → ./bin/ or ~/.complytime/providers/
                            │   ├── Policy layouts → ./policies/ or ~/.complytime/policies/
                            │   ├── complypack.yaml → ./
                            │   └── complytime.yaml.example → ./
-                           └── chmod +x provider binaries
+                           ├── chmod +x provider binaries
+                           └── On error → rollback all written files
 
 complyctl doctor (pack-aware) ──→ complypack.yaml present?
                                   ├── Yes → run pack checks + config checks
@@ -179,11 +204,14 @@ COMPLYTIME_PROVIDER_DIR ──→ ResolvePluginDir() (consts.go)
 
 ```text
 [OCI ref provided] ──(complyctl pack install)──→ [PackArtifact pulled]
-[PackArtifact pulled] ──(extract layers)──→ [Workspace populated]
+[PackArtifact pulled] ──(check existing pack)──→ [Existing? prompt overwrite / --force]
+[No conflict] ──(validate platform os/arch)──→ [Compatible? proceed : error + abort]
+[Compatible] ──(extract layers)──→ [Workspace populated]
+[Extract error] ──(rollback)──→ [All written files removed, error reported]
 [Workspace populated] ──(cp example → config)──→ [complytime.yaml created]
 [Config created] ──(edit targets/variables)──→ [Configured]
-[Configured] ──(complyctl doctor)──→ [Validated (pack + config)]
-[Validated] ──(complyctl scan)──→ [Scanning with bundled providers + cached policies]
+[Configured] ──(complyctl doctor)──→ [Diagnostics reported (advisory)]
+[Ready] ──(complyctl scan)──→ [Scanning with bundled providers + cached policies]
 ```
 
 ### Doctor Pack Detection

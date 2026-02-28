@@ -22,7 +22,8 @@ id: fedora-compliance
 version: "1.0.0"
 description: CIS and CUSP policies for Fedora workstations
 platform:
-  os: fedora
+  os: linux
+  arch: amd64
 policies:
   - url: registry.example.com/compliance/cis-fedora-l1-workstation@1.2.3
     id: cis-fedora-l1-workstation
@@ -37,8 +38,9 @@ providers:
     binary: complyctl-provider-openscap
 system-dependencies:
   - name: openscap-scanner
-    check: oscap --version
-    install: dnf install -y openscap-scanner
+    kind: rpm
+    value: openscap-scanner
+    url: https://www.open-scap.org/tools/openscap-base/
 ```
 
 ### 1b. Validate Buildability
@@ -49,13 +51,13 @@ complypack doctor
 
 Expected output:
 ```text
-✅ Pack manifest valid
-✅ Provider binary found: complyctl-provider-openscap
-✅ Registry reachable: registry.example.com
-✅ Registry reachable: public-registry.io
-✅ Policy exists: cis-fedora-l1-workstation@1.2.3
-✅ Policy exists: cusp-fedora-default@1.0.0
-✅ System dependency: openscap-scanner
+Pack manifest valid
+Provider binary found: complyctl-provider-openscap
+Registry reachable: registry.example.com
+Registry reachable: public-registry.io
+Policy exists: cis-fedora-l1-workstation@1.2.3
+Policy exists: cusp-fedora-default@1.0.0
+System dependency: openscap-scanner (rpm)
 ```
 
 ### 1c. Build the Pack
@@ -98,6 +100,8 @@ skopeo copy \
 mkdir my-compliance && cd my-compliance
 complyctl pack install registry.example.com/packs/fedora-compliance:1.0.0
 ```
+
+One pack per workspace. If a pack is already installed, you'll be prompted to overwrite (or use `--force`). Install validates host `os`/`arch` compatibility before extracting. If extraction fails, all written files are rolled back.
 
 Result:
 ```text
@@ -151,15 +155,15 @@ Not needed with `-g` (global install).
 complyctl doctor
 ```
 
-Expected output:
+Doctor is advisory — it reports diagnostics but does not block `generate` or `scan`:
 ```text
-✅ Workspace config valid
-✅ Pack manifest valid
-✅ Provider binary: complyctl-provider-openscap (./bin/)
-✅ Policy cache: cis-fedora-l1-workstation
-✅ Policy cache: cusp-fedora-default
-✅ System dependency: openscap-scanner
-✅ Target 'local' → cis-fedora-l1-workstation: variables OK
+Workspace config valid
+Pack manifest valid
+Provider binary: complyctl-provider-openscap (./bin/)
+Policy cache: cis-fedora-l1-workstation
+Policy cache: cusp-fedora-default
+System dependency: openscap-scanner (rpm)
+Target 'local' -> cis-fedora-l1-workstation: variables OK
 ```
 
 ### 2e. Scan
