@@ -4,8 +4,10 @@ package plugin
 
 import (
 	"context"
+	"os"
 
 	proto "github.com/complytime/complyctl/api/plugin"
+	"github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 )
@@ -40,12 +42,22 @@ func (p *GRPCEvaluatorPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBrok
 }
 
 // Serve starts the plugin process. Plugin authors call this from main().
+// A JSON logger is created at Trace level so every message reaches the
+// client; the client-side logger level controls what is actually written.
 func Serve(impl Plugin) {
+	logger := hclog.New(&hclog.LoggerOptions{
+		Level:      hclog.Trace,
+		Output:     os.Stderr,
+		JSONFormat: true,
+	})
+	hclog.SetDefault(logger)
+
 	goplugin.Serve(&goplugin.ServeConfig{
 		HandshakeConfig: Handshake,
 		Plugins: map[string]goplugin.Plugin{
 			"evaluator": &GRPCEvaluatorPlugin{Impl: impl},
 		},
+		Logger:     logger,
 		GRPCServer: goplugin.DefaultGRPCServer,
 	})
 }

@@ -35,7 +35,7 @@ const ScanOutputDir = "scan"
 const LogFileName = "complyctl.log"
 
 // DefaultCommandTimeout is the default deadline for scan and generate operations.
-// Individual plugin RPCs may use a shorter per-call timeout as a safety net.
+// This flows through gRPC to the plugin subprocess without additional capping.
 const DefaultCommandTimeout = 5 * time.Minute
 
 const PluginExecutablePrefix = "complyctl-provider-"

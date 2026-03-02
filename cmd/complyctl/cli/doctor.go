@@ -80,7 +80,7 @@ func runDoctor(verbose bool) error {
 
 	versionResolver := &registryVersionResolver{timeout: 5 * time.Second}
 
-	results := doctor.Run(cfg, configPath, pluginDir, cacheDir, resolver, versionResolver, verbose, logFile)
+	results := doctor.Run(cfg, configPath, pluginDir, cacheDir, resolver, versionResolver, verbose, logger)
 
 	fmt.Println("Running workspace diagnostics...")
 	fmt.Println()

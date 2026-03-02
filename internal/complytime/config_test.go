@@ -141,7 +141,7 @@ func TestValidate_EmptyURL(t *testing.T) {
 	}
 	err := complytime.Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "url cannot be empty")
+	assert.Contains(t, err.Error(), "cannot be empty")
 }
 
 func TestValidate_DuplicateURL(t *testing.T) {
@@ -361,4 +361,107 @@ func TestValidate_ZeroVersionAllowed(t *testing.T) {
 		}},
 	}
 	assert.NoError(t, complytime.Validate(cfg))
+}
+
+// T254: ValidateOCIRef tests
+
+func TestValidateOCIRef_ValidFullRef(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("registry.com/policies/nist-800-53-r5@v1.0"))
+}
+
+func TestValidateOCIRef_ValidWithTag(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("registry.com/repo:latest"))
+}
+
+func TestValidateOCIRef_ValidWithDigest(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("registry.com/repo@sha256:abc123def"))
+}
+
+func TestValidateOCIRef_ValidWithPort(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("localhost:5000/policies/test@v1.0"))
+}
+
+func TestValidateOCIRef_ValidHTTPS(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("https://ghcr.io/org/policy@latest"))
+}
+
+func TestValidateOCIRef_ValidHTTP(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("http://localhost:5000/policies/test@v1.0"))
+}
+
+func TestValidateOCIRef_ValidNestedPath(t *testing.T) {
+	assert.NoError(t, complytime.ValidateOCIRef("registry.com/org/team/policy@v2.0"))
+}
+
+func TestValidateOCIRef_RejectEmpty(t *testing.T) {
+	err := complytime.ValidateOCIRef("")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be empty")
+}
+
+func TestValidateOCIRef_RejectWhitespace(t *testing.T) {
+	err := complytime.ValidateOCIRef("   ")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be empty")
+}
+
+func TestValidateOCIRef_RejectShellInjection(t *testing.T) {
+	err := complytime.ValidateOCIRef("ls;pwd")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid characters")
+}
+
+func TestValidateOCIRef_RejectPipeInjection(t *testing.T) {
+	err := complytime.ValidateOCIRef("foo|bar")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid characters")
+}
+
+func TestValidateOCIRef_RejectBacktickInjection(t *testing.T) {
+	err := complytime.ValidateOCIRef("`whoami`/repo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid characters")
+}
+
+func TestValidateOCIRef_RejectDollarInjection(t *testing.T) {
+	err := complytime.ValidateOCIRef("$(cat /etc/passwd)/repo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid characters")
+}
+
+func TestValidateOCIRef_RejectBareWord(t *testing.T) {
+	err := complytime.ValidateOCIRef("nist-800-53-r5")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must include a registry")
+}
+
+func TestValidateOCIRef_RejectNoRegistryHost(t *testing.T) {
+	err := complytime.ValidateOCIRef("plaindir/repo@v1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must include a registry host")
+}
+
+// T256: Validate catches duplicate URLs (already tested above, but verify
+// the OCI validation runs first for malformed entries)
+
+func TestValidate_InvalidOCIRef(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Policies: []complytime.PolicyEntry{
+			{URL: "bare-name-no-registry"},
+		},
+	}
+	err := complytime.Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must include a registry")
+}
+
+func TestValidate_ShellInjectionInURL(t *testing.T) {
+	cfg := &complytime.WorkspaceConfig{
+		Policies: []complytime.PolicyEntry{
+			{URL: "ls;rm -rf /"},
+		},
+	}
+	err := complytime.Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid characters")
 }

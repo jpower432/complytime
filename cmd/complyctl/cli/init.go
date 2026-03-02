@@ -49,6 +49,15 @@ func (o *initOptions) run() error {
 	}
 
 	policies := promptPolicies()
+
+	if len(policies) == 0 {
+		if err := writeEmptyConfigTemplate(workspace.Path()); err != nil {
+			return fmt.Errorf("failed to create workspace configuration: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "Workspace configuration created (no policies — edit complytime.yaml to add them).")
+		return nil
+	}
+
 	targets := promptTargets(policies)
 
 	wsConfig := &complytime.WorkspaceConfig{
@@ -69,11 +78,38 @@ func (o *initOptions) run() error {
 	return nil
 }
 
+// emptyConfigTemplate is the YAML written when init is run with no policies.
+// Comments show the expected structure so users can fill it in manually.
+const emptyConfigTemplate = `# complytime.yaml - workspace configuration
+# See: complyctl init --help
+#
+# Add policies using the format below:
+#   policies:
+#     - url: registry.example.com/policies/my-policy@v1.0
+#       id: my-policy    # optional; auto-derived from URL path if omitted
+#
+# Add targets that reference policies by effective ID:
+#   targets:
+#     - id: local
+#       policies:
+#         - my-policy
+#       variables:
+#         profile: my-profile
+policies: []
+targets: []
+`
+
+func writeEmptyConfigTemplate(path string) error {
+	return os.WriteFile(path, []byte(emptyConfigTemplate), 0600)
+}
+
 func promptPolicies() []complytime.PolicyEntry {
 	fmt.Println("Add policies (one per line). For each, enter the OCI URL and an optional short ID.")
 	fmt.Println("Press Enter with an empty URL to finish.")
 
 	var policies []complytime.PolicyEntry
+	seenURLs := make(map[string]bool)
+
 	for i := 1; ; i++ {
 		fmt.Printf("  Policy %d URL (e.g. registry.com/policies/nist-800-53-r5@v1.0): ", i)
 		var url string
@@ -81,6 +117,19 @@ func promptPolicies() []complytime.PolicyEntry {
 			break
 		}
 		url = strings.TrimSpace(url)
+
+		if err := complytime.ValidateOCIRef(url); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s invalid: %v\n", complytime.StatusError, err)
+			i--
+			continue
+		}
+
+		if seenURLs[url] {
+			fmt.Fprintf(os.Stderr, "  %s duplicate policy URL skipped: %s\n", complytime.StatusError, url)
+			i--
+			continue
+		}
+		seenURLs[url] = true
 
 		fmt.Printf("  Policy %d ID (short name, or Enter to auto-derive): ", i)
 		var id string
@@ -94,11 +143,6 @@ func promptPolicies() []complytime.PolicyEntry {
 		policies = append(policies, entry)
 	}
 
-	if len(policies) == 0 {
-		return []complytime.PolicyEntry{
-			{URL: "registry.example.com/example-policy@latest"},
-		}
-	}
 	return policies
 }
 

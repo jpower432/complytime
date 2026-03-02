@@ -7,10 +7,16 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/complytime/complyctl/cmd/openscap-plugin/config"
 	"github.com/hashicorp/go-hclog"
 )
+
+// shellJoin formats a command slice as a copy-pasteable shell string.
+func shellJoin(command []string) string {
+	return strings.Join(command, " ")
+}
 
 func executeCommand(ctx context.Context, command []string) ([]byte, error) {
 	cmdPath, err := exec.LookPath(command[0])
@@ -18,13 +24,17 @@ func executeCommand(ctx context.Context, command []string) ([]byte, error) {
 		return nil, fmt.Errorf("command not found: %s: %w", command[0], err)
 	}
 
-	hclog.Default().Debug("Executing command", "command", command)
+	cmdStr := shellJoin(command)
+	hclog.Default().Info("Executing command", "command", cmdStr)
 	cmd := exec.CommandContext(ctx, cmdPath, command[1:]...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
-			return output, fmt.Errorf("command timed out or was cancelled: %w", ctx.Err())
+			return output, fmt.Errorf(
+				"command timed out after deadline: %w\n\nTo debug, run manually:\n  %s",
+				ctx.Err(), cmdStr,
+			)
 		}
 		if err.Error() == "exit status 1" {
 			return output, fmt.Errorf("oscap error during evaluation: %w", err)

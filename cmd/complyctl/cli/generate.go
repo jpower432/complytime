@@ -102,7 +102,7 @@ func (o *generateOptions) run(ctx context.Context) error {
 		return fmt.Errorf("failed to resolve policy graph: %w", err)
 	}
 
-	mgr, err := plugin.NewManager(o.pluginDir, logFile)
+	mgr, err := plugin.NewManager(o.pluginDir, logger)
 	if err != nil {
 		return fmt.Errorf("plugin manager init failed: %w", err)
 	}

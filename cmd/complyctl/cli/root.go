@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,10 +14,7 @@ import (
 	"github.com/complytime/complyctl/pkg/log"
 )
 
-var (
-	logger  hclog.Logger
-	logFile io.Writer
-)
+var logger hclog.Logger
 
 // lazyLogWriter defers log file creation until something actually writes to it.
 // See R57: log lives at {WorkspaceDir}/{LogFileName} (.complytime/complyctl.log).
@@ -48,7 +44,6 @@ func (w *lazyLogWriter) Write(p []byte) (int, error) {
 
 func init() {
 	lw := &lazyLogWriter{}
-	logFile = lw
 	logger = log.NewLogger(lw)
 }
 

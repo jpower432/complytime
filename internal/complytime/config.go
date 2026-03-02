@@ -13,6 +13,35 @@ import (
 
 var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
+// unsafeRefChars matches characters that should never appear in an OCI reference
+// and are commonly used for shell injection.
+var unsafeRefChars = regexp.MustCompile("[;|&$`!><(){}\\[\\]\\\\]")
+
+// ValidateOCIRef checks that raw looks like a valid OCI reference
+// (registry/repository with optional :tag or @version). It rejects empty
+// strings, shell metacharacters, and bare names without a registry component.
+func ValidateOCIRef(raw string) error {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return fmt.Errorf("policy URL cannot be empty")
+	}
+	if unsafeRefChars.MatchString(s) {
+		return fmt.Errorf("policy URL contains invalid characters: %s", s)
+	}
+
+	stripped := strings.TrimPrefix(strings.TrimPrefix(s, "https://"), "http://")
+	if !strings.Contains(stripped, "/") {
+		return fmt.Errorf("policy URL must include a registry and repository (e.g. registry.com/repo:tag): %s", s)
+	}
+
+	host := strings.SplitN(stripped, "/", 2)[0]
+	if !strings.Contains(host, ".") && !strings.Contains(host, ":") {
+		return fmt.Errorf("policy URL must include a registry host (e.g. registry.com/repo:tag): %s", s)
+	}
+
+	return nil
+}
+
 // WorkspaceConfig is the top-level YAML configuration for a complytime workspace.
 // See R48, R49: three-tier variable model.
 //
@@ -208,8 +237,8 @@ func Validate(config *WorkspaceConfig) error {
 	seenURL := make(map[string]bool)
 	seenID := make(map[string]bool)
 	for _, p := range config.Policies {
-		if strings.TrimSpace(p.URL) == "" {
-			return fmt.Errorf("policies[].url cannot be empty")
+		if err := ValidateOCIRef(p.URL); err != nil {
+			return fmt.Errorf("policies[]: %w", err)
 		}
 		if seenURL[p.URL] {
 			return fmt.Errorf("policies: duplicate url %s", p.URL)

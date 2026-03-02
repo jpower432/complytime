@@ -24,6 +24,7 @@
 | 15 | UX Refresh — Lipgloss Default, Scan Table, Execution Plan Collapse (R59) | **COMPLETE** |
 | 16 | Bug Fixes — Error Consistency, Get Timeout, Resolver Error Surfacing | **COMPLETE** |
 | 17 | Plain Text Only — Lipgloss Removal, Generate Readout, Dry-Run Removal (Session 2026-02-26e) | **COMPLETE** |
+| 18 | Init Hardening + OpenSCAP Debug Command (Session 2026-03-02) | **COMPLETE** |
 
 ---
 
@@ -864,6 +865,44 @@ Phase 17 verification:          T246-T252 (after all code tasks)
 
 ---
 
+## Phase 18: Init Hardening + OpenSCAP Debug Command (Session 2026-03-02)
+
+**Purpose**: Implement PR #381 feedback (OCI reference validation, duplicate handling, empty-policies default) and surface the `oscap` command in provider logs so admins can manually reproduce and debug hanging scans. The OpenSCAP provider currently logs the command at Debug level (`hclog.Debug`), which is filtered out by complyctl's go-plugin log filtering (WARN and above). On timeout, the error message says "command timed out or was cancelled" without including the command that was run — admins cannot reproduce the failure.
+
+**Dependencies**: Phase 3 complete (T043 `init.go` exists). OpenSCAP plugin code exists in `cmd/openscap-plugin/`.
+
+**Independent Test**: `complyctl init` rejects non-OCI-reference input, warns on duplicate URLs, and creates a commented template when no policies are provided. When an `oscap` scan times out, the error message includes the full shell-ready command string. `complyctl scan` log file (`.complytime/complyctl.log`) contains the `oscap` command at Info level.
+
+### 18a: OCI Reference Validation
+
+- [x] T253 [US1] Add OCI reference format validation to `promptPolicies()` in `cmd/complyctl/cli/init.go` — reject inputs not matching OCI reference format (registry/repo:tag or @digest). Display validation error and re-prompt. Also validate in `ParsePolicyRef()` or `Validate()` in `internal/complytime/config.go` for non-interactive paths (CI/CD commits `complytime.yaml` directly)
+- [x] T254 [P] [US1] Add unit tests for OCI reference validation — valid refs accepted (`registry.com/repo:tag`, `registry.com/repo@sha256:abc`), invalid refs rejected (bare words, shell injection like `ls;pwd`, empty string, whitespace-only)
+
+### 18b: Duplicate Policy Handling
+
+- [x] T255 [US1] Update `promptPolicies()` in `cmd/complyctl/cli/init.go` — detect duplicate policy URLs during interactive entry. Log warning (e.g., `⚠️ duplicate policy URL skipped: <url>`), skip the duplicate entry, continue prompting
+- [x] T256 [P] [US1] Add unit test for duplicate detection — two identical URLs produce one `PolicyEntry` + warning log
+
+### 18c: Empty Policies Default
+
+- [x] T257 [US1] Update config creation in `cmd/complyctl/cli/init.go` — when no policies are provided, write `complytime.yaml` with an empty `policies: []` list and a YAML comment showing the `url` + `id` structure as an example. No fake URL in actual config data
+- [x] T258 [P] [US1] Add unit test for empty policies path — verify generated YAML contains empty policies list and comment block
+
+### 18d: OpenSCAP Debug Command Visibility
+
+- [x] T259 [US2] Update `executeCommand()` in `cmd/openscap-plugin/oscap/oscap.go` — promote command logging from `hclog.Debug` to `hclog.Info` so the full command appears in `.complytime/complyctl.log` (go-plugin output is filtered to WARN+ but provider's own Info-level messages pass through). Format command as a shell-ready string (`strings.Join(command, " ")`) instead of Go slice representation. On context timeout (line 27), include the shell-ready command in the error message: `"command timed out after deadline: %s\n\nTo debug, run manually:\n  %s"` with `ctx.Err()` and the joined command string. Allows admins to copy-paste and reproduce the hang
+- [x] T260 [P] [US2] Add unit test for timeout error format in `cmd/openscap-plugin/oscap/oscap_test.go` — verify timeout error message contains the command string. Verify non-timeout errors do not include the command
+
+### 18e: Verification
+
+- [x] T261 Run `go build ./...` — all Phase 18 code compiles (including `cmd/openscap-plugin/`)
+- [x] T262 Run `go test ./...` — all tests pass
+- [x] T263 Run `go vet ./...` and `gofmt -l .` — clean
+
+**Checkpoint**: Init validates OCI references, handles duplicates gracefully, produces useful empty config. OpenSCAP timeout errors include the full command for manual debugging. Session 2026-03-02 complete.
+
+---
+
 ## Notes
 
 - [P] tasks = different files, no dependencies — safe to parallelize
@@ -879,3 +918,4 @@ Phase 17 verification:          T246-T252 (after all code tasks)
 - Phase 15 (T206-T225) is UX refresh — R59, Session 2026-02-26d, lipgloss default + scan table + execution plan collapse
 - Phase 16 (T226-T241) is bug fixes — error consistency + get timeout + resolver error surfacing
 - Phase 17 (T242-T252) is plain text only — Session 2026-02-26e, lipgloss removal + generate readout + dry-run removal
+- Phase 18 (T253-T263) is init hardening + OpenSCAP debug command — Session 2026-03-02, OCI validation + duplicate handling + empty default + oscap command in timeout errors
