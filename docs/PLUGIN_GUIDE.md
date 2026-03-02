@@ -159,7 +159,7 @@ variables:
 
 targets:
   - id: production-cluster
-    policy_ids:
+    policies:
       - nist-800-53-r5
     variables:
       kubeconfig: /path/to/kubeconfig
