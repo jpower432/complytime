@@ -129,6 +129,7 @@ func (s *PluginServer) Scan(ctx context.Context, req *plugin.ScanRequest) (*plug
 		return nil, fmt.Errorf("datastream error: %w", err)
 	}
 
+	hclog.Default().Info("Running scan", "profile", profile, "datastream", datastream)
 	_, err = scan.ScanSystem(ctx, datastream, profile)
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)
@@ -204,7 +205,7 @@ func (s *PluginServer) Scan(ctx context.Context, req *plugin.ScanRequest) (*plug
 				{
 					Name:    ruleIDRef,
 					Result:  mappedResult,
-					Message: fmt.Sprintf("openscap rule-result is %s", resultText),
+					Message: ruleResultMessage(rule, result, resultText),
 				},
 			},
 			Message:    fmt.Sprintf("Host %s evaluated", target),
@@ -240,6 +241,35 @@ func parseCheck(check *xmlquery.Node) (string, error) {
 		return "", fmt.Errorf("check id %q is in unexpected format", ovalCheckName)
 	}
 	return matches[shortNameLoc], nil
+}
+
+// ruleResultMessage builds a human-readable step message from the XCCDF
+// Rule definition and rule-result node. Prefers the rule title over the
+// raw ID, and appends any diagnostic messages OpenSCAP emitted.
+func ruleResultMessage(rule *xmlquery.Node, result *xmlquery.Node, resultText string) string {
+	title := ""
+	if el := rule.SelectElement("xccdf-1.2:title"); el != nil {
+		title = strings.TrimSpace(el.InnerText())
+	}
+
+	var parts []string
+	for _, msg := range result.SelectElements("message") {
+		if t := strings.TrimSpace(msg.InnerText()); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	diagnostic := strings.Join(parts, "; ")
+
+	if title != "" && diagnostic != "" {
+		return fmt.Sprintf("%s — %s (%s)", title, diagnostic, resultText)
+	}
+	if title != "" {
+		return fmt.Sprintf("%s (%s)", title, resultText)
+	}
+	if diagnostic != "" {
+		return fmt.Sprintf("%s (%s)", diagnostic, resultText)
+	}
+	return fmt.Sprintf("openscap rule-result is %s", resultText)
 }
 
 func mapResultStatus(resultText string) (plugin.Result, error) {
