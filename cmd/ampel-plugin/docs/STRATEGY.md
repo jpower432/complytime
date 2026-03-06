@@ -18,6 +18,8 @@ During the `generate` phase, the plugin receives assessment configurations from 
 
 This granular approach is also aligned with how the [Gemara2Ampel](https://github.com/complytime/complytime-demos/tree/main/tools/gemara2ampel) tool works: Gemara Layer 3 policies map naturally to individual AMPEL policy files, and the workspace mode (`-w`) of Gemara2Ampel already produces one file per policy. When complyctl adopts Gemara as its policy source, this granular structure will allow the plugin to consume Gemara-generated policies without changes to the matching and merging logic.
 
+**Note**: For interactive policy creation, use `complyctl-provider-ampel init --tool <agent>` to generate AI agent skill definitions. See [MIGRATION.md](./MIGRATION.md) for details.
+
 ## Multi-Target Scanning
 
 The ampel-plugin introduces multi-target scanning to complyctl. Unlike the existing openscap-plugin, which scans the local system it runs on, the ampel-plugin scans remote repositories defined in the `complytime.yaml` configuration.
@@ -36,8 +38,10 @@ Together, these capabilities position complyctl as the layer that connects organ
 
 ## Next Actions
 
-1. **Review and update the Gemara2Ampel tool to work with granular AMPEL policies**
-   The Gemara2Ampel converter currently supports workspace mode for generating individual policy files. It should be reviewed to ensure its output aligns with the granular policy format expected by the ampel-plugin (policy ID, meta.controls, tenets structure), so that Gemara-generated policies can be used directly as input to the plugin without manual adjustments.
+1. **Use AI-assisted policy creation with `init --tool`**
+   For interactive policy creation, use `complyctl-provider-ampel init --tool <agent>` to generate AI agent skill definitions. This enables AI coding assistants (Cursor, OpenCode, Claude Code) to help create AMPEL policies from Gemara artifacts. See [MIGRATION.md](./MIGRATION.md) for migration guidance.
+
+   The Gemara2Ampel converter remains available in [complytime-demos](https://github.com/complytime/complytime-demos) for batch conversion workflows. Its workspace mode (`-w`) produces individual policy files that align with the granular policy format expected by the ampel-plugin (policy ID, meta.controls, tenets structure).
 
 2. **Evolve the plugin API alongside complyctl**
    As complyctl's Gemara integration matures, the plugin's `Generate` phase may need to handle additional policy metadata or parameters. The matching and merging logic in the `convert` package is isolated for this purpose. The `server.Generate` method should be updated as the API evolves.

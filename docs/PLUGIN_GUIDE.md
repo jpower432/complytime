@@ -67,15 +67,51 @@ The canonical protobuf definition lives at `api/plugin/plugin.proto`. Key types:
 | `ConfidenceLevel` | Enum: NOT_SET, UNDETERMINED, LOW, MEDIUM, HIGH |
 | `Result` | Enum: UNSPECIFIED, PASSED, FAILED, SKIPPED, ERROR |
 
+## Plugin Commands
+
+Plugins support an optional development command:
+
+- **Default behavior**: Starts the gRPC server for runtime policy execution (handles `Describe`, `Generate`, `Scan` RPCs)
+- **`init --tool <agent>`**: Generates AI agent integration artifacts for the specified tool (cursor, opencode, claude-code)
+
+Plugins use `plugin.RegisterInit()` to register the init command handler. If no command is provided or the command is unrecognized, the plugin serves by default.
+
+### Init Command Registration
+
+Plugins register the init command using `plugin.RegisterInit()` with templates:
+
+```go
+if plugin.RegisterInit(plugin.InitTemplates{
+    CommandTemplate: commandTemplate,  // Markdown template for command definition
+    SkillTemplate:   skillTemplate,      // Markdown template for skill definition
+    CommandName:     "my-command",       // Kebab-case command name
+    SkillName:       "my-skill",         // Optional: defaults to CommandName
+}) {
+    return  // Command handled, exit
+}
+```
+
+### Init Command Installation
+
+The `init --tool <agent>` command installs skill definitions directly to the correct locations:
+
+- **Cursor**: Writes to `.cursor/commands/{command-name}.md` and `.cursor/skills/{skill-name}/SKILL.md`
+- **OpenCode**: Appends to `.cursorrules` in workspace root
+- **Claude Code**: Writes to `.claude/{command-name}-tool.md`
+
+The command automatically detects the workspace root (by finding `.git` directory or using current directory) and installs files accordingly.
+
 ## Authoring a Plugin (Go)
 
-Use `plugin.Serve()` to register and start the gRPC server. The handshake is handled automatically.
+Plugins serve by default. Use `plugin.Serve()` to register and start the gRPC server. The handshake is handled automatically. Optionally, plugins can register an `init` command to set up development tooling.
 
 ```go
 package main
 
 import (
     "context"
+    "fmt"
+    "os"
 
     "github.com/complytime/complyctl/pkg/plugin"
 )
@@ -121,6 +157,16 @@ func (p *myPlugin) Scan(_ context.Context, req *plugin.ScanRequest) (*plugin.Sca
 }
 
 func main() {
+    // Register init command handler (optional)
+    if plugin.RegisterInit(plugin.InitTemplates{
+        CommandTemplate: commandTemplate,  // Embed or load your command template
+        SkillTemplate:   skillTemplate,      // Embed or load your skill template
+        CommandName:     "my-command",
+    }) {
+        return  // Command handled, exit
+    }
+
+    // Default behavior: serve the plugin
     plugin.Serve(&myPlugin{})
 }
 ```
@@ -168,7 +214,9 @@ targets:
 
 ## Reference Implementation
 
-See `cmd/test-plugin/main.go` for a complete working example. Build with:
+See `cmd/test-plugin/main.go` for a complete working example. See `cmd/ampel-plugin/main.go` for an example implementing the default serve behavior and optional `init` command. See `docs/PLUGIN_TEMPLATE.md` for a template showing the command structure.
+
+Build with:
 
 ```bash
 make build-test-plugin

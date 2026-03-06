@@ -94,6 +94,8 @@ The plugin uses granular AMPEL policy files (one JSON file per control) stored i
 
 Sample policy files are available in the [complytime-demos](https://github.com/complytime/complytime-demos) repository under `base_ansible_env/files/ampel-policies/`.
 
+**Creating AMPEL Policies**: Use `complyctl-provider-ampel init --tool <agent>` to generate AI agent skill definitions for interactive policy creation. See [docs/MIGRATION.md](./docs/MIGRATION.md) for migration from manual `gemara2ampel` script.
+
 ### Generate
 
 When the plugin receives the `generate` command from complyctl, it will:
@@ -195,6 +197,48 @@ The plugin is discovered automatically by complyctl — no manifest files or che
 ### Running
 
 To use the plugin with `complyctl`, see the quick start [guide](../../docs/QUICK_START.md).
+
+## Plugin Commands
+
+The AMPEL plugin supports two command modes:
+
+### Default Behavior (serve)
+
+The plugin starts the gRPC server for runtime policy execution by default. When invoked by complyctl or run directly, it handles `Describe`, `Generate`, and `Scan` RPCs:
+
+```bash
+complyctl-provider-ampel
+```
+
+The plugin handles `Describe`, `Generate`, and `Scan` RPCs from complyctl.
+
+### `init --tool <agent>` Command
+
+Installs AI agent integration artifacts for creating AMPEL policies. Supported agents:
+
+- `cursor`: Installs Cursor command to `.cursor/commands/ampel-create-policy.md` and skill to `.cursor/skills/ampel-create-policy/SKILL.md`
+- `opencode`: Appends skill definition to `.cursorrules` in workspace root
+- `claude-code`: Installs Claude Code tool definition to `.claude/ampel-create-policy-tool.md`
+
+**Usage:**
+
+```bash
+# Install Cursor command and skill (/ampel-create-policy)
+complyctl-provider-ampel init --tool cursor
+
+# Install OpenCode skill definition
+complyctl-provider-ampel init --tool opencode
+
+# Install Claude Code tool definition
+complyctl-provider-ampel init --tool claude-code
+```
+
+The `init` command:
+- Creates necessary directories (`.cursor/`, `.claude/`) if they don't exist
+- Writes agent-specific skill definitions to the correct locations
+- Provides feedback on what was installed
+
+After installation, AI coding assistants (OpenCode, Cursor, Claude Code) can help users create AMPEL policies from Gemara artifacts interactively.
 
 ### Using complytime-demos with a Fedora 43 VM
 
