@@ -24,8 +24,8 @@ import (
 )
 
 var (
-	_ plugin.Plugin = (*PluginServer)(nil)
-	ovalRegex       = regexp.MustCompile(`^[^:]*?:[^-]*?-(.*?):.*?$`)
+	_         plugin.Plugin = (*PluginServer)(nil)
+	ovalRegex               = regexp.MustCompile(`^[^:]*?:[^-]*?-(.*?):.*?$`)
 )
 
 const ovalCheckType = "http://oval.mitre.org/XMLSchema/oval-definitions-5"
@@ -214,6 +214,13 @@ func (s *PluginServer) Scan(ctx context.Context, req *plugin.ScanRequest) (*plug
 	}
 
 	return &plugin.ScanResponse{Assessments: assessments}, nil
+}
+
+func (s *PluginServer) Export(_ context.Context, _ *plugin.ExportRequest) (*plugin.ExportResponse, error) {
+	return &plugin.ExportResponse{
+		Success:      false,
+		ErrorMessage: "openscap plugin does not yet support export",
+	}, nil
 }
 
 // mergeVariables combines global and target variable maps into a single
