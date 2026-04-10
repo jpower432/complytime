@@ -41,7 +41,7 @@ func EvaluatorMismatchRejected(payload any) (gemara.Result, string, gemara.Confi
 
 	pluginDir := filepath.Join(ctx.HomeDir, ".complytime", "providers")
 	oldPath := filepath.Join(pluginDir, "complyctl-provider-test")
-	newPath := filepath.Join(pluginDir, "complyctl-plugin-other")
+	newPath := filepath.Join(pluginDir, "complyctl-provider-other")
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return gemara.Unknown, "failed to rename plugin: " + err.Error(), gemara.Undetermined
 	}

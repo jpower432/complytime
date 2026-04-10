@@ -44,7 +44,7 @@ test-e2e: build build-test-plugin ## run full E2E tests (in-process mock registr
 test-behavioral: build build-test-plugin build-behavioral-report ## run behavioral assessment and generate EvaluationLog + SARIF
 	$(GO_BUILD_BINDIR)/behavioral-report \
 		-binary $(GO_BUILD_BINDIR)/complyctl \
-		-test-plugin $(GO_BUILD_BINDIR)/complytime-provider-test \
+		-test-plugin $(GO_BUILD_BINDIR)/complyctl-provider-test \
 		-catalog governance/controls/complytime-controls.yaml \
 		-artifact-uri governance/controls/complytime-controls.yaml \
 		-out governance/reports

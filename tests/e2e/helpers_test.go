@@ -43,7 +43,8 @@ imports:
     - reference-id: nist-800-53-r5
 adherence:
   evaluation-methods:
-    - type: automated
+    - type: Behavioral
+      mode: Automated
       executor:
         id: test
         name: test-evaluator
@@ -53,7 +54,8 @@ adherence:
       requirement-id: AC-1
       frequency: continuous
       evaluation-methods:
-        - type: automated
+        - type: Behavioral
+          mode: Automated
           executor:
             id: test
             name: test-evaluator
@@ -62,7 +64,8 @@ adherence:
       requirement-id: AC-2
       frequency: continuous
       evaluation-methods:
-        - type: automated
+        - type: Behavioral
+          mode: Automated
           executor:
             id: test
             name: test-evaluator

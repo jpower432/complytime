@@ -93,14 +93,53 @@ func StartMockRegistry() *httptest.Server {
 		repos[repoName] = repo
 	}
 
-	policyLayer := []byte(`- id: AC-1-impl
-  evaluator_id: test
-  parameters:
-    control_id: AC-1
-- id: AC-2-impl
-  evaluator_id: test
-  parameters:
-    control_id: AC-2
+	policyLayer := []byte(`title: Test Policy
+metadata:
+  id: test-policy
+  version: "1.0.0"
+contacts:
+  responsible:
+    - id: test-team
+      name: Test Team
+  accountable:
+    - id: test-lead
+      name: Test Lead
+scope:
+  in:
+    technologies:
+      - linux
+imports:
+  catalogs:
+    - reference-id: nist-800-53-r5
+adherence:
+  evaluation-methods:
+    - type: Behavioral
+      mode: Automated
+      executor:
+        id: test
+        name: test-evaluator
+        type: Software
+  assessment-plans:
+    - id: AC-1-impl
+      requirement-id: AC-1
+      frequency: continuous
+      evaluation-methods:
+        - type: Behavioral
+          mode: Automated
+          executor:
+            id: test
+            name: test-evaluator
+            type: Software
+    - id: AC-2-impl
+      requirement-id: AC-2
+      frequency: continuous
+      evaluation-methods:
+        - type: Behavioral
+          mode: Automated
+          executor:
+            id: test
+            name: test-evaluator
+            type: Software
 `)
 	catalogLayer := []byte(`id: nist-800-53-r5
 title: NIST SP 800-53 Rev 5

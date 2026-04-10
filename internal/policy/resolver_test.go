@@ -112,7 +112,9 @@ adherence:
       requirement-id: req-1
       frequency: daily
       evaluation-methods:
-        - type: automated
+        - id: ev-1
+          type: Behavioral
+          mode: Automated
           executor:
             id: openscap
 `)
@@ -155,7 +157,9 @@ adherence:
       requirement-id: req-min
       frequency: weekly
       evaluation-methods:
-        - type: automated
+        - id: ev-1
+          type: Behavioral
+          mode: Automated
           executor:
             id: kube-eval
 `)
@@ -226,7 +230,9 @@ adherence:
       requirement-id: req-1
       frequency: daily
       evaluation-methods:
-        - type: automated
+        - id: ev-1
+          type: Behavioral
+          mode: Automated
           executor:
             id: openscap
 `)
@@ -262,14 +268,18 @@ adherence:
       requirement-id: req-1
       frequency: daily
       evaluation-methods:
-        - type: automated
+        - id: ev-1
+          type: Behavioral
+          mode: Automated
           executor:
             id: openscap
     - id: ap-2
       requirement-id: req-2
       frequency: weekly
       evaluation-methods:
-        - type: automated
+        - id: ev-2
+          type: Behavioral
+          mode: Automated
           executor:
             id: kube-eval
 `)
@@ -291,14 +301,14 @@ func TestExtractFromGemaraPolicy_SingleEvaluator(t *testing.T) {
 					Id:        "ap-1",
 					Frequency: "daily",
 					EvaluationMethods: []gemara.AcceptedMethod{
-						{Type: "automated", Executor: gemara.Actor{Id: "openscap"}},
+						{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "openscap"}},
 					},
 				},
 				{
 					Id:        "ap-2",
 					Frequency: "weekly",
 					EvaluationMethods: []gemara.AcceptedMethod{
-						{Type: "automated", Executor: gemara.Actor{Id: "openscap"}},
+						{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "openscap"}},
 					},
 				},
 			},
@@ -318,14 +328,14 @@ func TestExtractFromGemaraPolicy_MixedEvaluators(t *testing.T) {
 					Id:        "ap-1",
 					Frequency: "daily",
 					EvaluationMethods: []gemara.AcceptedMethod{
-						{Type: "automated", Executor: gemara.Actor{Id: "openscap"}},
+						{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "openscap"}},
 					},
 				},
 				{
 					Id:        "ap-2",
 					Frequency: "weekly",
 					EvaluationMethods: []gemara.AcceptedMethod{
-						{Type: "automated", Executor: gemara.Actor{Id: "kube-eval"}},
+						{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "kube-eval"}},
 					},
 				},
 			},
@@ -357,7 +367,7 @@ func TestExtractFromGemaraPolicy_Timeline(t *testing.T) {
 					Id:        "ap-1",
 					Frequency: "daily",
 					EvaluationMethods: []gemara.AcceptedMethod{
-						{Type: "automated", Executor: gemara.Actor{Id: "test"}},
+						{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "test"}},
 					},
 				},
 			},
@@ -381,7 +391,7 @@ func TestExtractFromGemaraPolicy_NoTimeline(t *testing.T) {
 					Id:        "ap-1",
 					Frequency: "daily",
 					EvaluationMethods: []gemara.AcceptedMethod{
-						{Type: "automated", Executor: gemara.Actor{Id: "test"}},
+						{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "test"}},
 					},
 				},
 			},
@@ -396,7 +406,7 @@ func TestExtractFromGemaraPolicy_PolicyLevelFallback(t *testing.T) {
 	p := &gemara.Policy{
 		Adherence: gemara.Adherence{
 			EvaluationMethods: []gemara.AcceptedMethod{
-				{Type: "automated", Executor: gemara.Actor{Id: "policy-level"}},
+				{Type: gemara.MethodBehavioral, Mode: gemara.ModeAutomated, Executor: gemara.Actor{Id: "policy-level"}},
 			},
 			AssessmentPlans: []gemara.AssessmentPlan{
 				{
@@ -507,7 +517,9 @@ adherence:
       requirement-id: req-1
       frequency: daily
       evaluation-methods:
-        - type: automated
+        - id: ev-1
+          type: Behavioral
+          mode: Automated
           executor:
             id: openscap
 `)

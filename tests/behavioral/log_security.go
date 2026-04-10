@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/gemaraproj/go-gemara"
+
+	"github.com/complytime/complyctl/internal/complytime"
 )
 
 // LogCredentialRedaction verifies the log file does not contain plaintext
@@ -40,7 +42,7 @@ targets:
 	_, _ = ctx.RunBinary("get")
 	_, _ = ctx.RunBinary("generate", "--policy-id", ctx.PolicyID)
 
-	logPath := filepath.Join(ctx.WorkDir, "complytime.log")
+	logPath := filepath.Join(ctx.WorkDir, complytime.WorkspaceDir, complytime.LogFileName)
 	logData, err := os.ReadFile(logPath)
 	if err != nil {
 		return gemara.Unknown, "no log file found at " + logPath, gemara.Undetermined

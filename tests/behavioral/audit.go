@@ -56,10 +56,9 @@ func OSCALResultProduced(payload any) (gemara.Result, string, gemara.ConfidenceL
 		return gemara.Failed, "scan --format oscal failed: " + output, gemara.High
 	}
 
-	outDir := filepath.Join(ctx.WorkDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
-	oscalFile := findFile(outDir, "assessment-results-", ".json")
+	oscalFile := findFile(ctx.WorkDir, "assessment-results-", ".json")
 	if oscalFile == "" {
-		return gemara.Failed, "no assessment-results-*.json found in " + outDir, gemara.High
+		return gemara.Failed, "no assessment-results-*.json found in " + ctx.WorkDir, gemara.High
 	}
 
 	data, err := os.ReadFile(oscalFile)

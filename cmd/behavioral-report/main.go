@@ -3,15 +3,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/complytime/complyctl/tests/behavioral"
 	"github.com/gemaraproj/go-gemara"
+	"github.com/gemaraproj/go-gemara/fetcher"
 	"github.com/gemaraproj/go-gemara/gemaraconv"
 	"github.com/goccy/go-yaml"
 )
@@ -50,13 +51,12 @@ func main() {
 
 	var catalog *gemara.ControlCatalog
 	if *catalogPath != "" {
-		c := &gemara.ControlCatalog{}
-		uri := toFileURI(*catalogPath)
-		if err := c.LoadFile(uri); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not load catalog %s: %v\n", *catalogPath, err)
-		} else {
-			catalog = c
+		c, err := gemara.Load[gemara.ControlCatalog](context.Background(), &fetcher.File{}, *catalogPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error loading catalog %q: %v", *catalogPath, err)
+			os.Exit(1)
 		}
+		catalog = c
 	}
 
 	srv := behavioral.StartMockRegistry()
@@ -201,15 +201,4 @@ func sortedKeys(m map[string][]gemara.AssessmentStep) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func toFileURI(path string) string {
-	if strings.HasPrefix(path, "file:///") || strings.HasPrefix(path, "https://") {
-		return path
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = path
-	}
-	return "file://" + abs
 }
