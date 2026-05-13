@@ -360,9 +360,7 @@ func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager,
 		return err
 	}
 
-	if warnings := output.FormatOperationalWarnings(scanOut.errors); warnings != "" {
-		fmt.Fprint(os.Stderr, warnings)
-	}
+	reportOperationalWarnings(scanOut.errors)
 
 	eval := buildEvaluator(repository, reqToControl, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
 
@@ -371,8 +369,18 @@ func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager,
 		return err
 	}
 
-	if len(scanOut.errors) > 0 {
-		return fmt.Errorf("scan completed with %d operational error(s) — some targets could not be evaluated", len(scanOut.errors))
+	return checkOperationalErrors(scanOut.errors)
+}
+
+func reportOperationalWarnings(errors []string) {
+	if warnings := output.FormatOperationalWarnings(errors); warnings != "" {
+		fmt.Fprint(os.Stderr, warnings)
+	}
+}
+
+func checkOperationalErrors(errors []string) error {
+	if len(errors) > 0 {
+		return fmt.Errorf("scan completed with %d operational error(s) — some targets could not be evaluated", len(errors))
 	}
 	return nil
 }
