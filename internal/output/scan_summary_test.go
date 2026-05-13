@@ -124,6 +124,33 @@ func TestFormatScanSummary_MissingTargetID(t *testing.T) {
 	assert.Contains(t, output, "-")
 }
 
+func TestFormatOperationalWarnings_Empty(t *testing.T) {
+	result := FormatOperationalWarnings(nil)
+	assert.Empty(t, result)
+
+	result = FormatOperationalWarnings([]string{})
+	assert.Empty(t, result)
+}
+
+func TestFormatOperationalWarnings_SingleError(t *testing.T) {
+	result := FormatOperationalWarnings([]string{"target 'staging': clone failed: auth denied"})
+
+	assert.Contains(t, result, "WARNING: 1 operational error(s)")
+	assert.Contains(t, result, "clone failed: auth denied")
+}
+
+func TestFormatOperationalWarnings_MultipleErrors(t *testing.T) {
+	errors := []string{
+		"target 'staging': clone failed: auth denied",
+		"target 'dev': missing required tool: conftest",
+	}
+	result := FormatOperationalWarnings(errors)
+
+	assert.Contains(t, result, "WARNING: 2 operational error(s)")
+	assert.Contains(t, result, "  - target 'staging': clone failed: auth denied")
+	assert.Contains(t, result, "  - target 'dev': missing required tool: conftest")
+}
+
 func TestFormatScanSummary_ControlIDMissing(t *testing.T) {
 	assessments := []provider.AssessmentLog{
 		{
