@@ -170,11 +170,35 @@ func (m *Manager) RouteGenerate(ctx context.Context, evaluatorID string, globalV
 	return nil
 }
 
+// ScanResult holds the combined output of a RouteScan call, separating
+// evaluation results (Assessments) from operational failures (Errors).
+type ScanResult struct {
+	Assessments []AssessmentLog
+	Errors      []string
+}
+
+// HasErrors reports whether the scan encountered operational failures.
+func (r *ScanResult) HasErrors() bool {
+	return len(r.Errors) > 0
+}
+
 // RouteScan dispatches a ScanRequest to the provider matching evaluatorID.
 // The provider evaluates all requirements from Generate-time state — no
 // requirement IDs are sent over the wire.
 // See R47: specs/001-gemara-native-workflow/research.md
 func (m *Manager) RouteScan(ctx context.Context, evaluatorID string, targets []Target) ([]AssessmentLog, error) {
+	result, err := m.RouteScanResult(ctx, evaluatorID, targets)
+	if err != nil {
+		return nil, err
+	}
+	return result.Assessments, nil
+}
+
+// RouteScanResult dispatches a ScanRequest and returns the full ScanResult
+// including both assessments and operational errors. Callers that need to
+// distinguish evaluation results from infrastructure failures should use
+// this method instead of RouteScan.
+func (m *Manager) RouteScanResult(ctx context.Context, evaluatorID string, targets []Target) (*ScanResult, error) {
 	req := &ScanRequest{
 		Targets: targets,
 	}
@@ -190,12 +214,18 @@ func (m *Manager) RouteScan(ctx context.Context, evaluatorID string, targets []T
 			msg := m.scanErrorMessage(p.Info.ProviderID, scanErr, ctx)
 			m.logger.Error("Provider Scan failed",
 				"provider_id", p.Info.ProviderID, "error", scanErr)
-			return errorAssessments(evaluatorID, msg), nil
+			return &ScanResult{
+				Assessments: errorAssessments(evaluatorID, msg),
+				Errors:      []string{msg},
+			}, nil
 		}
-		return resp.Assessments, nil
+		return &ScanResult{
+			Assessments: resp.Assessments,
+			Errors:      resp.Errors,
+		}, nil
 	}
 
-	var all []AssessmentLog
+	result := &ScanResult{}
 	for _, p := range m.ListProviders() {
 		m.logger.Info("Scanning via provider (broadcast)", "provider_id", p.Info.ProviderID)
 		resp, scanErr := p.GetClient().Scan(ctx, req)
@@ -203,12 +233,14 @@ func (m *Manager) RouteScan(ctx context.Context, evaluatorID string, targets []T
 			msg := m.scanErrorMessage(p.Info.ProviderID, scanErr, ctx)
 			m.logger.Error("Provider Scan failed",
 				"provider_id", p.Info.ProviderID, "error", scanErr)
-			all = append(all, errorAssessments(p.Info.EvaluatorID, msg)...)
+			result.Assessments = append(result.Assessments, errorAssessments(p.Info.EvaluatorID, msg)...)
+			result.Errors = append(result.Errors, msg)
 			continue
 		}
-		all = append(all, resp.Assessments...)
+		result.Assessments = append(result.Assessments, resp.Assessments...)
+		result.Errors = append(result.Errors, resp.Errors...)
 	}
-	return all, nil
+	return result, nil
 }
 
 // scanErrorMessage builds an error string for a failed Scan RPC. When the

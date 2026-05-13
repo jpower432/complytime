@@ -191,3 +191,70 @@ func TestManager_RouteScan_ProviderError_ReturnsErrorAssessment(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Contains(t, results[0].Message, "scan RPC failed")
 }
+
+func TestManager_RouteScanResult_ReturnsErrors(t *testing.T) {
+	mgr, err := provider.NewManager(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	fm := &failingMockClient{failScan: true}
+	lp := provider.NewMockLoadedProvider("fail-provider", "fail-eval", fm)
+	mgr.RegisterProviderForTest("fail-eval", lp)
+
+	result, err := mgr.RouteScanResult(context.Background(), "fail-eval", nil)
+	require.NoError(t, err)
+	assert.True(t, result.HasErrors())
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "scan RPC failed")
+	require.Len(t, result.Assessments, 1)
+	assert.Equal(t, provider.ResultError, result.Assessments[0].Steps[0].Result)
+}
+
+type errorEmbeddingMockClient struct {
+	mockClient
+}
+
+func (e *errorEmbeddingMockClient) Scan(_ context.Context, _ *provider.ScanRequest) (*provider.ScanResponse, error) {
+	return &provider.ScanResponse{
+		Assessments: []provider.AssessmentLog{{
+			RequirementID: "req-1",
+			Steps:         []provider.Step{{Name: "check", Result: provider.ResultPassed}},
+			Message:       "evaluated",
+		}},
+		Errors: []string{"target 'staging': clone failed: auth denied"},
+	}, nil
+}
+
+func TestManager_RouteScanResult_PartialResults(t *testing.T) {
+	mgr, err := provider.NewManager(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	mock := &errorEmbeddingMockClient{}
+	lp := provider.NewMockLoadedProvider("partial-provider", "partial-eval", mock)
+	mgr.RegisterProviderForTest("partial-eval", lp)
+
+	result, err := mgr.RouteScanResult(context.Background(), "partial-eval",
+		[]provider.Target{{TargetID: "prod"}, {TargetID: "staging"}})
+	require.NoError(t, err)
+
+	assert.True(t, result.HasErrors())
+	assert.Contains(t, result.Errors[0], "clone failed")
+	require.Len(t, result.Assessments, 1)
+	assert.Equal(t, "req-1", result.Assessments[0].RequirementID)
+}
+
+func TestManager_RouteScanResult_NoErrors(t *testing.T) {
+	mgr, err := provider.NewManager(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	mock := &failingMockClient{}
+	lp := provider.NewMockLoadedProvider("ok-provider", "ok-eval", mock)
+	mgr.RegisterProviderForTest("ok-eval", lp)
+
+	result, err := mgr.RouteScanResult(context.Background(), "ok-eval",
+		[]provider.Target{{TargetID: "t1"}})
+	require.NoError(t, err)
+
+	assert.False(t, result.HasErrors())
+	assert.Empty(t, result.Errors)
+	assert.NotEmpty(t, result.Assessments)
+}
