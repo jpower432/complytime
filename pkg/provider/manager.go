@@ -295,6 +295,6 @@ func errorAssessments(evaluatorID string, message string) []AssessmentLog {
 			Message: message,
 		}},
 		Message:    message,
-		Confidence: 0,
+		Confidence: ConfidenceLevelNotSet,
 	}}
 }

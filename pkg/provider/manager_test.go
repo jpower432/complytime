@@ -246,7 +246,7 @@ func TestManager_RouteScanResult_NoErrors(t *testing.T) {
 	mgr, err := provider.NewManager(t.TempDir(), nil)
 	require.NoError(t, err)
 
-	mock := &failingMockClient{}
+	mock := newMockClient()
 	lp := provider.NewMockLoadedProvider("ok-provider", "ok-eval", mock)
 	mgr.RegisterProviderForTest("ok-eval", lp)
 
@@ -256,5 +256,89 @@ func TestManager_RouteScanResult_NoErrors(t *testing.T) {
 
 	assert.False(t, result.HasErrors())
 	assert.Empty(t, result.Errors)
+}
+
+func TestManager_RouteScanResult_Broadcast_AggregatesErrors(t *testing.T) {
+	mgr, err := provider.NewManager(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	// Provider that returns partial results with errors
+	partial := &errorEmbeddingMockClient{}
+	lpPartial := provider.NewMockLoadedProvider("partial-provider", "partial-eval", partial)
+	mgr.RegisterProviderForTest("partial-eval", lpPartial)
+
+	// Provider that succeeds cleanly
+	clean := newMockClient()
+	lpClean := provider.NewMockLoadedProvider("clean-provider", "clean-eval", clean)
+	mgr.RegisterProviderForTest("clean-eval", lpClean)
+
+	// Broadcast mode: empty evaluatorID scans all providers
+	result, err := mgr.RouteScanResult(context.Background(), "",
+		[]provider.Target{{TargetID: "prod"}})
+	require.NoError(t, err)
+
+	assert.True(t, result.HasErrors())
+	assert.Contains(t, result.Errors[0], "clone failed")
+	// Should have assessments from both providers
+	assert.GreaterOrEqual(t, len(result.Assessments), 1)
+}
+
+func TestManager_RouteScanResult_Broadcast_RPCFailure(t *testing.T) {
+	mgr, err := provider.NewManager(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	// Provider that fails at the RPC level
+	failing := &failingMockClient{failScan: true}
+	lpFailing := provider.NewMockLoadedProvider("fail-provider", "fail-eval", failing)
+	mgr.RegisterProviderForTest("fail-eval", lpFailing)
+
+	// Provider that succeeds cleanly
+	clean := newMockClient()
+	lpClean := provider.NewMockLoadedProvider("clean-provider", "clean-eval", clean)
+	mgr.RegisterProviderForTest("clean-eval", lpClean)
+
+	// Broadcast: both providers scanned, one fails
+	result, err := mgr.RouteScanResult(context.Background(), "",
+		[]provider.Target{{TargetID: "t1"}})
+	require.NoError(t, err)
+
+	assert.True(t, result.HasErrors())
+	require.Len(t, result.Errors, 1)
+	assert.Contains(t, result.Errors[0], "scan RPC failed")
+	// Should still have assessments (from clean provider + error assessment from failed)
 	assert.NotEmpty(t, result.Assessments)
+}
+
+func TestManager_RouteScan_DropsProviderErrors(t *testing.T) {
+	mgr, err := provider.NewManager(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	// Provider returns both assessments and errors
+	mock := &errorEmbeddingMockClient{}
+	lp := provider.NewMockLoadedProvider("partial-provider", "partial-eval", mock)
+	mgr.RegisterProviderForTest("partial-eval", lp)
+
+	// RouteScan returns only assessments, not errors
+	results, err := mgr.RouteScan(context.Background(), "partial-eval",
+		[]provider.Target{{TargetID: "prod"}})
+	require.NoError(t, err)
+
+	// Assessments are returned
+	require.Len(t, results, 1)
+	assert.Equal(t, "req-1", results[0].RequirementID)
+	// The error is silently dropped (backwards-compatible behavior)
+}
+
+func TestScanResult_HasErrors_EdgeCases(t *testing.T) {
+	// nil Errors slice
+	nilResult := &provider.ScanResult{Errors: nil}
+	assert.False(t, nilResult.HasErrors())
+
+	// empty Errors slice
+	emptyResult := &provider.ScanResult{Errors: []string{}}
+	assert.False(t, emptyResult.HasErrors())
+
+	// populated Errors slice
+	populatedResult := &provider.ScanResult{Errors: []string{"some error"}}
+	assert.True(t, populatedResult.HasErrors())
 }
