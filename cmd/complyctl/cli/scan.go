@@ -353,6 +353,9 @@ func ensureGenerated(ctx context.Context, cacheDir string, mgr *provider.Manager
 	return runGeneration(ctx, mgr, groups, policyTargets, globalVars, repository, policyDigest, evaluatorIDs)
 }
 
+// runScanAndReport executes the scan across all targets and processes the
+// combined output (reports + error checking). It delegates post-scan handling
+// to processScanOutput.
 func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string) error {
 	reqToControl := extractReqToControlMap(graph)
 	scanOut, err := executeScan(ctx, mgr, groups, policyTargets)
@@ -360,6 +363,14 @@ func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager,
 		return err
 	}
 
+	return processScanOutput(format, scanOut, repository, reqToControl, policyTargets, eid, targetIDs)
+}
+
+// processScanOutput handles post-scan output: prints operational warnings to
+// stderr, writes evaluation reports, and returns an error when operational
+// failures are present (triggering non-zero exit). Reports are always written
+// before the error return so partial results remain available.
+func processScanOutput(format string, scanOut *scanOutput, repository string, reqToControl map[string]string, policyTargets []complytime.TargetConfig, eid string, targetIDs []string) error {
 	reportOperationalWarnings(scanOut.errors)
 
 	eval := buildEvaluator(repository, reqToControl, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
@@ -372,15 +383,24 @@ func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager,
 	return checkOperationalErrors(scanOut.errors)
 }
 
+// reportOperationalWarnings prints provider-reported operational errors as
+// WARNING lines to stderr. No output is produced when errors is empty.
 func reportOperationalWarnings(errors []string) {
 	if warnings := output.FormatOperationalWarnings(errors); warnings != "" {
 		fmt.Fprint(os.Stderr, warnings)
 	}
 }
 
+// checkOperationalErrors returns an error summarizing the count of operational
+// failures. The returned error causes cobra to exit non-zero. Returns nil when
+// no operational errors occurred.
 func checkOperationalErrors(errors []string) error {
 	if len(errors) > 0 {
-		return fmt.Errorf("scan completed with %d operational error(s) — some targets could not be evaluated", len(errors))
+		noun := "errors"
+		if len(errors) == 1 {
+			noun = "error"
+		}
+		return fmt.Errorf("scan completed with %d operational %s — some targets could not be evaluated", len(errors), noun)
 	}
 	return nil
 }

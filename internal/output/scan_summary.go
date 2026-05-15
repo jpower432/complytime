@@ -146,7 +146,11 @@ func FormatOperationalWarnings(errors []string) string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\nWARNING: %d operational error(s) during scan:\n", len(errors))
+	noun := "errors"
+	if len(errors) == 1 {
+		noun = "error"
+	}
+	fmt.Fprintf(&b, "\nWARNING: %d operational %s during scan:\n", len(errors), noun)
 	for _, e := range errors {
 		fmt.Fprintf(&b, "  - %s\n", e)
 	}

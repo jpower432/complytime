@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/complytime/complyctl/pkg/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/complytime/complyctl/pkg/provider"
 )
 
 func TestFormatScanSummary_SingleTarget(t *testing.T) {
@@ -135,7 +136,7 @@ func TestFormatOperationalWarnings_Empty(t *testing.T) {
 func TestFormatOperationalWarnings_SingleError(t *testing.T) {
 	result := FormatOperationalWarnings([]string{"target 'staging': clone failed: auth denied"})
 
-	assert.Contains(t, result, "WARNING: 1 operational error(s)")
+	assert.Contains(t, result, "WARNING: 1 operational error during scan")
 	assert.Contains(t, result, "clone failed: auth denied")
 }
 
@@ -146,7 +147,7 @@ func TestFormatOperationalWarnings_MultipleErrors(t *testing.T) {
 	}
 	result := FormatOperationalWarnings(errors)
 
-	assert.Contains(t, result, "WARNING: 2 operational error(s)")
+	assert.Contains(t, result, "WARNING: 2 operational errors during scan")
 	assert.Contains(t, result, "  - target 'staging': clone failed: auth denied")
 	assert.Contains(t, result, "  - target 'dev': missing required tool: conftest")
 }

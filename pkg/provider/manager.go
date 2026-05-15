@@ -170,7 +170,7 @@ func (m *Manager) RouteGenerate(ctx context.Context, evaluatorID string, globalV
 	return nil
 }
 
-// ScanResult holds the combined output of a RouteScan call, separating
+// ScanResult holds the combined output of a RouteScanResult call, separating
 // evaluation results (Assessments) from operational failures (Errors).
 type ScanResult struct {
 	Assessments []AssessmentLog
