@@ -175,6 +175,15 @@ func (m *Manager) RouteGenerate(ctx context.Context, evaluatorID string, globalV
 type ScanResult struct {
 	Assessments []AssessmentLog
 	Errors      []string
+	// rpcFailures tracks RPC-level errors with their evaluator context.
+	// RouteScan uses these to synthesize backward-compatible error assessments
+	// without re-injecting provider-reported operational errors.
+	rpcFailures []rpcFailure
+}
+
+type rpcFailure struct {
+	evaluatorID string
+	message     string
 }
 
 // HasErrors reports whether the scan encountered operational failures.
@@ -186,12 +195,20 @@ func (r *ScanResult) HasErrors() bool {
 // The provider evaluates all requirements from Generate-time state — no
 // requirement IDs are sent over the wire.
 // See R47: specs/001-gemara-native-workflow/research.md
+//
+// Backward-compat: injects synthetic error assessments for operational
+// failures so callers that only consume the assessment stream still see
+// error entries. New callers should prefer RouteScanResult.
 func (m *Manager) RouteScan(ctx context.Context, evaluatorID string, targets []Target) ([]AssessmentLog, error) {
 	result, err := m.RouteScanResult(ctx, evaluatorID, targets)
 	if err != nil {
 		return nil, err
 	}
-	return result.Assessments, nil
+	assessments := result.Assessments
+	for _, f := range result.rpcFailures {
+		assessments = append(assessments, errorAssessments(f.evaluatorID, f.message)...)
+	}
+	return assessments, nil
 }
 
 // RouteScanResult dispatches a ScanRequest and returns the full ScanResult
@@ -215,8 +232,8 @@ func (m *Manager) RouteScanResult(ctx context.Context, evaluatorID string, targe
 			m.logger.Error("Provider Scan failed",
 				"provider_id", p.Info.ProviderID, "error", scanErr)
 			return &ScanResult{
-				Assessments: errorAssessments(evaluatorID, msg),
 				Errors:      []string{msg},
+				rpcFailures: []rpcFailure{{evaluatorID: evaluatorID, message: msg}},
 			}, nil
 		}
 		return &ScanResult{
@@ -233,8 +250,10 @@ func (m *Manager) RouteScanResult(ctx context.Context, evaluatorID string, targe
 			msg := m.scanErrorMessage(p.Info.ProviderID, scanErr, ctx)
 			m.logger.Error("Provider Scan failed",
 				"provider_id", p.Info.ProviderID, "error", scanErr)
-			result.Assessments = append(result.Assessments, errorAssessments(p.Info.EvaluatorID, msg)...)
 			result.Errors = append(result.Errors, msg)
+			result.rpcFailures = append(result.rpcFailures, rpcFailure{
+				evaluatorID: p.Info.EvaluatorID, message: msg,
+			})
 			continue
 		}
 		result.Assessments = append(result.Assessments, resp.Assessments...)

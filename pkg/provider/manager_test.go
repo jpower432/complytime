@@ -205,8 +205,7 @@ func TestManager_RouteScanResult_ReturnsErrors(t *testing.T) {
 	assert.True(t, result.HasErrors())
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0], "scan RPC failed")
-	require.Len(t, result.Assessments, 1)
-	assert.Equal(t, provider.ResultError, result.Assessments[0].Steps[0].Result)
+	assert.Empty(t, result.Assessments, "RPC failures must not inject synthetic assessments (D3)")
 }
 
 type errorEmbeddingMockClient struct {
@@ -292,10 +291,13 @@ func TestManager_RouteScanResult_Broadcast_RPCFailure(t *testing.T) {
 	lpFailing := provider.NewMockLoadedProvider("fail-provider", "fail-eval", failing)
 	mgr.RegisterProviderForTest("fail-eval", lpFailing)
 
-	// Provider that succeeds cleanly
+	// Provider that succeeds cleanly — must Generate first so Scan returns results
 	clean := newMockClient()
 	lpClean := provider.NewMockLoadedProvider("clean-provider", "clean-eval", clean)
 	mgr.RegisterProviderForTest("clean-eval", lpClean)
+	_, _ = clean.Generate(context.Background(), &provider.GenerateRequest{
+		Configuration: []provider.AssessmentConfiguration{{RequirementID: "req-1"}},
+	})
 
 	// Broadcast: both providers scanned, one fails
 	result, err := mgr.RouteScanResult(context.Background(), "",
@@ -305,8 +307,10 @@ func TestManager_RouteScanResult_Broadcast_RPCFailure(t *testing.T) {
 	assert.True(t, result.HasErrors())
 	require.Len(t, result.Errors, 1)
 	assert.Contains(t, result.Errors[0], "scan RPC failed")
-	// Should still have assessments (from clean provider + error assessment from failed)
-	assert.NotEmpty(t, result.Assessments)
+	// Assessments come only from the clean provider — RPC failures do not
+	// inject synthetic assessments (D3).
+	require.Len(t, result.Assessments, 1)
+	assert.Equal(t, "req-1", result.Assessments[0].RequirementID)
 }
 
 func TestManager_RouteScan_DropsProviderErrors(t *testing.T) {
