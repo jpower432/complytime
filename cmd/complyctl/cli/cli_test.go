@@ -892,7 +892,7 @@ func TestProcessScanOutput_NoErrors_ReturnsNil(t *testing.T) {
 	policyTargets := []complytime.TargetConfig{{ID: "target-1"}}
 	reqToControl := map[string]string{"req-1": "ctrl-1"}
 
-	err = processScanOutput("", scanOut, "test-repo", reqToControl, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
+	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, "", policyTargets, "test-policy", []string{"target-1"}, tmpDir)
 	assert.NoError(t, err)
 }
 
@@ -921,7 +921,7 @@ func TestProcessScanOutput_WithErrors_ReturnsError(t *testing.T) {
 	policyTargets := []complytime.TargetConfig{{ID: "target-1"}}
 	reqToControl := map[string]string{"req-1": "ctrl-1"}
 
-	err = processScanOutput("", scanOut, "test-repo", reqToControl, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
+	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, "", policyTargets, "test-policy", []string{"target-1"}, tmpDir)
 	w.Close()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "1 operational error")
@@ -1489,4 +1489,33 @@ func TestCompleteTargetIDs_WithWorkspaceConfig(t *testing.T) {
 	assert.Equal(t, cobra.ShellCompDirectiveNoFileComp, directive)
 	assert.Contains(t, ids, "prod")
 	assert.Contains(t, ids, "staging")
+}
+
+// --- reverseMap tests ---
+
+func TestReverseMap_Basic(t *testing.T) {
+	m := map[string]string{"ap-1": "req-1", "ap-2": "req-2"}
+	r := reverseMap(m)
+	assert.Equal(t, "ap-1", r["req-1"])
+	assert.Equal(t, "ap-2", r["req-2"])
+	assert.Len(t, r, 2)
+}
+
+func TestReverseMap_Empty(t *testing.T) {
+	r := reverseMap(map[string]string{})
+	assert.Empty(t, r)
+}
+
+func TestReverseMap_Nil(t *testing.T) {
+	r := reverseMap(nil)
+	assert.Empty(t, r)
+}
+
+// --- resolveComplypackRef tests ---
+
+func TestResolveComplypackRef_NoCacheDir(t *testing.T) {
+	ref := resolveComplypackRef(t.TempDir(), map[string]policy.EvaluatorGroup{
+		"opa": {EvaluatorID: "opa"},
+	}, nil)
+	assert.Equal(t, "", ref)
 }

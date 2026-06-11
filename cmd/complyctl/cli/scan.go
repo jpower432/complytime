@@ -283,7 +283,7 @@ func (o *scanOptions) scanPolicy(ctx context.Context, cfg *complytime.WorkspaceC
 }
 
 func (o *scanOptions) executeScanPhase(ctx context.Context, cfg *complytime.WorkspaceConfig, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
-	if err := runScanAndReport(ctx, o.format, mgr, groups, policyTargets, repository, eid, graph, targetIDs, baseDir); err != nil {
+	if err := runScanAndReport(ctx, o.format, o.cacheDir, mgr, groups, cfg.Complypacks, policyTargets, repository, eid, graph, targetIDs, baseDir); err != nil {
 		return err
 	}
 	return o.maybeExport(ctx, cfg, mgr, groups)
@@ -366,9 +366,11 @@ func ensureGenerated(ctx context.Context, cacheDir, baseDir string, mgr *provide
 // runScanAndReport executes the scan across all targets and processes the
 // combined output (reports + error checking). It delegates post-scan handling
 // to processScanOutput.
-func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
+func runScanAndReport(ctx context.Context, format string, cacheDir string, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, complypacks []complytime.PolicyEntry, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
 	reqToControl := extractReqToControlMap(graph)
 	planToReq := extractPlanToReqMap(graph)
+	reqToPlan := reverseMap(planToReq)
+	complypackRef := resolveComplypackRef(cacheDir, groups, complypacks)
 	targetsWithWorkspace := injectWorkspaceIntoTargets(policyTargets, baseDir)
 	scanOut, err := executeScan(ctx, mgr, groups, targetsWithWorkspace)
 	if err != nil {
@@ -376,17 +378,17 @@ func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager,
 	}
 
 	resolveAssessmentIDs(scanOut.assessments, planToReq)
-	return processScanOutput(format, scanOut, repository, reqToControl, policyTargets, eid, targetIDs, baseDir)
+	return processScanOutput(format, scanOut, repository, reqToControl, reqToPlan, complypackRef, policyTargets, eid, targetIDs, baseDir)
 }
 
 // processScanOutput handles post-scan output: prints operational warnings to
 // stderr, writes evaluation reports, and returns an error when operational
 // failures are present (triggering non-zero exit). Reports are always written
 // before the error return so partial results remain available.
-func processScanOutput(format string, scanOut *scanOutput, repository string, reqToControl map[string]string, policyTargets []complytime.TargetConfig, eid string, targetIDs []string, baseDir string) error {
+func processScanOutput(format string, scanOut *scanOutput, repository string, reqToControl, reqToPlan map[string]string, complypackRef string, policyTargets []complytime.TargetConfig, eid string, targetIDs []string, baseDir string) error {
 	reportOperationalWarnings(scanOut.errors)
 
-	evaluators := buildEvaluators(repository, reqToControl, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
+	evaluators := buildEvaluators(repository, reqToControl, reqToPlan, complypackRef, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
 
 	outDir := filepath.Join(baseDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
 	for _, eval := range evaluators {
@@ -421,10 +423,10 @@ func checkOperationalErrors(errors []string) error {
 	return nil
 }
 
-func buildEvaluators(repository string, reqToControl map[string]string, policyTargets []complytime.TargetConfig, allAssessments []provider.AssessmentLog, assessmentTargets []string) []*output.Evaluator {
+func buildEvaluators(repository string, reqToControl, reqToPlan map[string]string, complypackRef string, policyTargets []complytime.TargetConfig, allAssessments []provider.AssessmentLog, assessmentTargets []string) []*output.Evaluator {
 	evaluators := make([]*output.Evaluator, 0, len(policyTargets))
 	for _, target := range policyTargets {
-		eval := output.NewEvaluator(repository, target.ID, reqToControl)
+		eval := output.NewEvaluator(repository, target.ID, reqToControl, reqToPlan, complypackRef)
 		var targetAssessments []provider.AssessmentLog
 		for j, a := range allAssessments {
 			if assessmentTargets[j] == target.ID {
@@ -885,4 +887,43 @@ func resolveAssessmentIDs(assessments []provider.AssessmentLog, planToReq map[st
 			assessments[i].RequirementID = reqID
 		}
 	}
+}
+
+// reverseMap inverts a string-to-string map. If multiple keys map to the same
+// value, only one mapping is preserved (last-write-wins) and a warning is logged.
+func reverseMap(m map[string]string) map[string]string {
+	r := make(map[string]string, len(m))
+	for k, v := range m {
+		if existing, ok := r[v]; ok {
+			logger.Warn("multiple keys map to same value in reverse map",
+				"value", v, "kept", existing, "dropped", k)
+		}
+		r[v] = k
+	}
+	return r
+}
+
+// resolveComplypackRef builds a complypack OCI reference string
+// (repository@digest) for the evaluator groups in this scan. Returns ""
+// if no complypack is cached for any evaluator in the groups.
+//
+// State.Complypacks entries include an EvaluatorID field (set during
+// complypack sync) which directly maps repositories to evaluator-ids.
+func resolveComplypackRef(cacheDir string, groups map[string]policy.EvaluatorGroup, complypacks []complytime.PolicyEntry) string {
+	if len(complypacks) == 0 {
+		return ""
+	}
+	state, err := cache.LoadState(cacheDir)
+	if err != nil {
+		logger.Debug("failed to load cache state for complypack ref resolution", "error", err)
+		return ""
+	}
+	for evalID := range groups {
+		for repo, ps := range state.Complypacks {
+			if ps.Digest != "" && ps.EvaluatorID == evalID {
+				return repo + "@" + ps.Digest
+			}
+		}
+	}
+	return ""
 }
