@@ -127,10 +127,10 @@ func (s *State) UpdateComplypackState(repository, version, digest, evaluatorID s
 
 // GetComplypackState returns the cached state for a complypack, keyed by
 // repository (e.g., "example.com/complypacks/opa-bundle").
-func (s *State) GetComplypackState(evaluatorID string) (PolicyState, bool) {
+func (s *State) GetComplypackState(repository string) (PolicyState, bool) {
 	if s.Complypacks == nil {
 		return PolicyState{}, false
 	}
-	state, exists := s.Complypacks[evaluatorID]
+	state, exists := s.Complypacks[repository]
 	return state, exists
 }
