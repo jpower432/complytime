@@ -32,6 +32,16 @@ type scanOptions struct {
 	providerDir string
 }
 
+// resolvedMappings groups the ID-resolution maps built during scan setup.
+// Bundling them into a struct prevents parameter-transposition bugs across
+// the four identically-typed map[string]string arguments.
+type resolvedMappings struct {
+	reqToControl   map[string]string
+	reqToPlan      map[string]string
+	complypackRefs map[string]string
+	reqToEvaluator map[string]string
+}
+
 func scanCmd(common *Common) *cobra.Command {
 	o := &scanOptions{
 		Common: common,
@@ -368,10 +378,13 @@ func ensureGenerated(ctx context.Context, cacheDir, baseDir string, mgr *provide
 // combined output (reports + error checking). It delegates post-scan handling
 // to processScanOutput.
 func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, complypackRefs map[string]string, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
-	reqToControl := extractReqToControlMap(graph)
 	planToReq := extractPlanToReqMap(graph)
-	reqToPlan := reverseMap(planToReq)
-	reqToEvaluator := extractReqToEvaluator(groups)
+	mappings := resolvedMappings{
+		reqToControl:   extractReqToControlMap(graph),
+		reqToPlan:      reverseMap(planToReq),
+		complypackRefs: complypackRefs,
+		reqToEvaluator: extractReqToEvaluator(groups),
+	}
 	targetsWithWorkspace := injectWorkspaceIntoTargets(policyTargets, baseDir)
 	scanOut, err := executeScan(ctx, mgr, groups, targetsWithWorkspace)
 	if err != nil {
@@ -379,17 +392,17 @@ func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager,
 	}
 
 	resolveAssessmentIDs(scanOut.assessments, planToReq)
-	return processScanOutput(format, scanOut, repository, reqToControl, reqToPlan, complypackRefs, reqToEvaluator, policyTargets, eid, targetIDs, baseDir)
+	return processScanOutput(format, scanOut, repository, &mappings, policyTargets, eid, targetIDs, baseDir)
 }
 
 // processScanOutput handles post-scan output: prints operational warnings to
 // stderr, writes evaluation reports, and returns an error when operational
 // failures are present (triggering non-zero exit). Reports are always written
 // before the error return so partial results remain available.
-func processScanOutput(format string, scanOut *scanOutput, repository string, reqToControl, reqToPlan, complypackRefs, reqToEvaluator map[string]string, policyTargets []complytime.TargetConfig, eid string, targetIDs []string, baseDir string) error {
+func processScanOutput(format string, scanOut *scanOutput, repository string, mappings *resolvedMappings, policyTargets []complytime.TargetConfig, eid string, targetIDs []string, baseDir string) error {
 	reportOperationalWarnings(scanOut.errors)
 
-	evaluators := buildEvaluators(repository, reqToControl, reqToPlan, complypackRefs, reqToEvaluator, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
+	evaluators := buildEvaluators(repository, mappings, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
 
 	outDir := filepath.Join(baseDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
 	for _, eval := range evaluators {
@@ -398,7 +411,7 @@ func processScanOutput(format string, scanOut *scanOutput, repository string, re
 		}
 	}
 
-	fmt.Println(output.FormatScanSummary(scanOut.assessments, scanOut.assessmentTargets, reqToControl, eid, targetIDs))
+	fmt.Println(output.FormatScanSummary(scanOut.assessments, scanOut.assessmentTargets, mappings.reqToControl, eid, targetIDs))
 	return checkOperationalErrors(scanOut.errors)
 }
 
@@ -424,10 +437,10 @@ func checkOperationalErrors(errors []string) error {
 	return nil
 }
 
-func buildEvaluators(repository string, reqToControl, reqToPlan, complypackRefs, reqToEvaluator map[string]string, policyTargets []complytime.TargetConfig, allAssessments []provider.AssessmentLog, assessmentTargets []string) []*output.Evaluator {
+func buildEvaluators(repository string, mappings *resolvedMappings, policyTargets []complytime.TargetConfig, allAssessments []provider.AssessmentLog, assessmentTargets []string) []*output.Evaluator {
 	evaluators := make([]*output.Evaluator, 0, len(policyTargets))
 	for _, target := range policyTargets {
-		eval := output.NewEvaluator(repository, target.ID, reqToControl, reqToPlan, complypackRefs, reqToEvaluator)
+		eval := output.NewEvaluator(repository, target.ID, mappings.reqToControl, mappings.reqToPlan, mappings.complypackRefs, mappings.reqToEvaluator)
 		var targetAssessments []provider.AssessmentLog
 		for j, a := range allAssessments {
 			if assessmentTargets[j] == target.ID {
@@ -897,7 +910,7 @@ func reverseMap(m map[string]string) map[string]string {
 	for k, v := range m {
 		if existing, ok := r[v]; ok {
 			logger.Warn("multiple keys map to same value in reverse map",
-				"value", v, "kept", existing, "dropped", k)
+				"value", v, "kept", k, "dropped", existing)
 		}
 		r[v] = k
 	}

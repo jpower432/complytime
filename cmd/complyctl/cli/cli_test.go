@@ -890,9 +890,11 @@ func TestProcessScanOutput_NoErrors_ReturnsNil(t *testing.T) {
 		errors:            nil,
 	}
 	policyTargets := []complytime.TargetConfig{{ID: "target-1"}}
-	reqToControl := map[string]string{"req-1": "ctrl-1"}
+	mappings := &resolvedMappings{
+		reqToControl: map[string]string{"req-1": "ctrl-1"},
+	}
 
-	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, nil, nil, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
+	err = processScanOutput("", scanOut, "test-repo", mappings, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
 	assert.NoError(t, err)
 }
 
@@ -919,9 +921,11 @@ func TestProcessScanOutput_WithErrors_ReturnsError(t *testing.T) {
 		errors:            []string{"target 'staging': clone failed"},
 	}
 	policyTargets := []complytime.TargetConfig{{ID: "target-1"}}
-	reqToControl := map[string]string{"req-1": "ctrl-1"}
+	mappings := &resolvedMappings{
+		reqToControl: map[string]string{"req-1": "ctrl-1"},
+	}
 
-	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, nil, nil, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
+	err = processScanOutput("", scanOut, "test-repo", mappings, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
 	w.Close()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "1 operational error")
