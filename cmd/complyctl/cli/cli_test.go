@@ -892,7 +892,7 @@ func TestProcessScanOutput_NoErrors_ReturnsNil(t *testing.T) {
 	policyTargets := []complytime.TargetConfig{{ID: "target-1"}}
 	reqToControl := map[string]string{"req-1": "ctrl-1"}
 
-	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, "", policyTargets, "test-policy", []string{"target-1"}, tmpDir)
+	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, nil, nil, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
 	assert.NoError(t, err)
 }
 
@@ -921,7 +921,7 @@ func TestProcessScanOutput_WithErrors_ReturnsError(t *testing.T) {
 	policyTargets := []complytime.TargetConfig{{ID: "target-1"}}
 	reqToControl := map[string]string{"req-1": "ctrl-1"}
 
-	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, "", policyTargets, "test-policy", []string{"target-1"}, tmpDir)
+	err = processScanOutput("", scanOut, "test-repo", reqToControl, nil, nil, nil, policyTargets, "test-policy", []string{"target-1"}, tmpDir)
 	w.Close()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "1 operational error")
@@ -1511,11 +1511,58 @@ func TestReverseMap_Nil(t *testing.T) {
 	assert.Empty(t, r)
 }
 
-// --- resolveComplypackRef tests ---
+// --- buildComplypackRefs tests ---
 
-func TestResolveComplypackRef_NoCacheDir(t *testing.T) {
-	ref := resolveComplypackRef(t.TempDir(), map[string]policy.EvaluatorGroup{
-		"opa": {EvaluatorID: "opa"},
-	}, nil)
-	assert.Equal(t, "", ref)
+func TestBuildComplypackRefs_NoComplypacks(t *testing.T) {
+	refs := buildComplypackRefs(t.TempDir(), nil)
+	assert.Empty(t, refs)
+}
+
+func TestBuildComplypackRefs_NoCacheState(t *testing.T) {
+	refs := buildComplypackRefs(t.TempDir(), []complytime.PolicyEntry{
+		{URL: "registry.example.com/complypacks/opa@v1"},
+	})
+	assert.Empty(t, refs)
+}
+
+// --- extractReqToEvaluator tests ---
+
+func TestExtractReqToEvaluator_SingleGroup(t *testing.T) {
+	groups := map[string]policy.EvaluatorGroup{
+		"opa": {
+			EvaluatorID: "opa",
+			Configs: []provider.AssessmentConfiguration{
+				{RequirementID: "req-1"},
+				{RequirementID: "req-2"},
+			},
+		},
+	}
+	m := extractReqToEvaluator(groups)
+	assert.Equal(t, "opa", m["req-1"])
+	assert.Equal(t, "opa", m["req-2"])
+}
+
+func TestExtractReqToEvaluator_MultipleGroups(t *testing.T) {
+	groups := map[string]policy.EvaluatorGroup{
+		"opa": {
+			EvaluatorID: "opa",
+			Configs: []provider.AssessmentConfiguration{
+				{RequirementID: "req-1"},
+			},
+		},
+		"openscap": {
+			EvaluatorID: "openscap",
+			Configs: []provider.AssessmentConfiguration{
+				{RequirementID: "req-2"},
+			},
+		},
+	}
+	m := extractReqToEvaluator(groups)
+	assert.Equal(t, "opa", m["req-1"])
+	assert.Equal(t, "openscap", m["req-2"])
+}
+
+func TestExtractReqToEvaluator_EmptyGroups(t *testing.T) {
+	m := extractReqToEvaluator(map[string]policy.EvaluatorGroup{})
+	assert.Empty(t, m)
 }

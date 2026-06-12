@@ -18,37 +18,44 @@ import (
 // Evaluator accumulates provider assessments for a single target and produces
 // a gemara.EvaluationLog grouped by control.
 type Evaluator struct {
-	policyID      string
-	targetID      string
-	reqToControl  map[string]string
-	reqToPlan     map[string]string
-	complypackRef string
-	controlEvals  map[string]*gemara.ControlEvaluation
-	controlOrder  []string
+	policyID       string
+	targetID       string
+	reqToControl   map[string]string
+	reqToPlan      map[string]string
+	complypackRefs map[string]string
+	reqToEvaluator map[string]string
+	controlEvals   map[string]*gemara.ControlEvaluation
+	controlOrder   []string
 	// controlStepNames tracks step name strings parallel to each control's
 	// AssessmentLogs slice. Keyed by control ID, each value is a slice of
 	// step name slices (one per assessment log under that control).
 	controlStepNames map[string][][]string
 }
 
+// defaultMap returns m if non-nil, otherwise a new empty map.
+func defaultMap(m map[string]string) map[string]string {
+	if m == nil {
+		return make(map[string]string)
+	}
+	return m
+}
+
 // NewEvaluator creates an Evaluator scoped to a single target. reqToControl
 // maps requirement IDs to control IDs; pass nil when the catalog is unavailable.
 // reqToPlan maps requirement IDs to assessment plan IDs for populating the Plan
-// field; pass nil when unavailable. complypackRef is the OCI reference
-// (repository@digest) for step identity; pass "" when no complypack is configured.
-func NewEvaluator(policyID, targetID string, reqToControl, reqToPlan map[string]string, complypackRef string) *Evaluator {
-	if reqToControl == nil {
-		reqToControl = make(map[string]string)
-	}
-	if reqToPlan == nil {
-		reqToPlan = make(map[string]string)
-	}
+// field; pass nil when unavailable. complypackRefs maps evaluator IDs to OCI
+// references (repository@digest) for step identity; pass nil when no complypacks
+// are configured. reqToEvaluator maps requirement IDs to evaluator IDs for
+// resolving which complypack reference applies to each assessment; pass nil
+// when unavailable.
+func NewEvaluator(policyID, targetID string, reqToControl, reqToPlan, complypackRefs, reqToEvaluator map[string]string) *Evaluator {
 	return &Evaluator{
 		policyID:         policyID,
 		targetID:         targetID,
-		reqToControl:     reqToControl,
-		reqToPlan:        reqToPlan,
-		complypackRef:    complypackRef,
+		reqToControl:     defaultMap(reqToControl),
+		reqToPlan:        defaultMap(reqToPlan),
+		complypackRefs:   defaultMap(complypackRefs),
+		reqToEvaluator:   defaultMap(reqToEvaluator),
 		controlEvals:     make(map[string]*gemara.ControlEvaluation),
 		controlStepNames: make(map[string][][]string),
 	}
@@ -292,6 +299,18 @@ func formatStepIdentity(complypackRef, stepName string) string {
 	return stepName
 }
 
+// resolveComplypackRef returns the OCI reference for the complypack associated
+// with the given requirement ID. It looks up the evaluator that owns the
+// requirement, then resolves the complypack reference for that evaluator.
+// Returns "" when no complypack is configured for the requirement's evaluator.
+func (e *Evaluator) resolveComplypackRef(requirementID string) string {
+	evalID, ok := e.reqToEvaluator[requirementID]
+	if !ok {
+		return ""
+	}
+	return e.complypackRefs[evalID]
+}
+
 // toSerializable converts a gemara.EvaluationLog into the shadow struct,
 // replacing AssessmentStep closures with formatted step identity strings.
 func (e *Evaluator) toSerializable(log *gemara.EvaluationLog) *serializableEvaluationLog {
@@ -301,13 +320,14 @@ func (e *Evaluator) toSerializable(log *gemara.EvaluationLog) *serializableEvalu
 		controlNames := e.controlStepNames[controlID]
 		sLogs := make([]*serializableAssessmentLog, len(ce.AssessmentLogs))
 		for j, al := range ce.AssessmentLogs {
+			complypackRef := e.resolveComplypackRef(al.Requirement.EntryId)
 			var names []string
 			if j < len(controlNames) {
 				names = controlNames[j]
 			}
 			steps := make([]string, len(names))
 			for k, name := range names {
-				steps[k] = formatStepIdentity(e.complypackRef, name)
+				steps[k] = formatStepIdentity(complypackRef, name)
 			}
 			sLogs[j] = &serializableAssessmentLog{
 				Requirement:     al.Requirement,

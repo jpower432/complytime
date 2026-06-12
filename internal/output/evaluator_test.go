@@ -14,8 +14,34 @@ import (
 	"github.com/complytime/complyctl/pkg/provider"
 )
 
+func TestNewEvaluator_NilMapsInitialized(t *testing.T) {
+	eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
+	// Should not panic when adding targets — nil maps are initialized internally.
+	eval.AddTarget([]provider.AssessmentLog{
+		{RequirementID: "R1", Steps: []provider.Step{{Result: provider.ResultPassed, Message: "ok"}}},
+	})
+	assert.Equal(t, gemara.Passed, eval.GemaraLog().Result)
+}
+
+func TestNewEvaluator_NonNilMapsPreserved(t *testing.T) {
+	reqToControl := map[string]string{"req-1": "ctrl-1"}
+	reqToPlan := map[string]string{"req-1": "plan-1"}
+	complypackRefs := map[string]string{"opa": "registry.example.com/complypacks/opa@sha256:abc"}
+	reqToEvaluator := map[string]string{"req-1": "opa"}
+	eval := output.NewEvaluator("pol", "tgt", reqToControl, reqToPlan, complypackRefs, reqToEvaluator)
+	eval.AddTarget([]provider.AssessmentLog{
+		{
+			RequirementID: "req-1",
+			Steps:         []provider.Step{{Name: "check", Result: provider.ResultPassed, Message: "ok"}},
+		},
+	})
+	log := eval.GemaraLog()
+	require.Len(t, log.Evaluations, 1)
+	assert.Equal(t, "ctrl-1", log.Evaluations[0].Name)
+}
+
 func TestGemaraLog_MetadataType(t *testing.T) {
-	eval := output.NewEvaluator("test-policy", "target-1", nil, nil, "")
+	eval := output.NewEvaluator("test-policy", "target-1", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{
 			RequirementID: "REQ-1",
@@ -53,7 +79,7 @@ func TestGemaraLog_AggregatesResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			eval := output.NewEvaluator("pol", "tgt", nil, nil, "")
+			eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
 			eval.AddTarget([]provider.AssessmentLog{
 				{RequirementID: "R1", Steps: tt.steps},
 			})
@@ -63,7 +89,7 @@ func TestGemaraLog_AggregatesResult(t *testing.T) {
 }
 
 func TestGemaraLog_PopulatesTarget(t *testing.T) {
-	eval := output.NewEvaluator("policy-id", "my-target", nil, nil, "")
+	eval := output.NewEvaluator("policy-id", "my-target", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{RequirementID: "R1", Steps: []provider.Step{{Result: provider.ResultPassed, Message: "ok"}}},
 	})
@@ -75,7 +101,7 @@ func TestGemaraLog_PopulatesTarget(t *testing.T) {
 }
 
 func TestGemaraLog_AssessmentMessageUsesStepViolation(t *testing.T) {
-	eval := output.NewEvaluator("pol", "tgt", nil, nil, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{
 			RequirementID: "REQ-1",
@@ -93,7 +119,7 @@ func TestGemaraLog_AssessmentMessageUsesStepViolation(t *testing.T) {
 }
 
 func TestGemaraLog_PassingAssessmentKeepsProviderMessage(t *testing.T) {
-	eval := output.NewEvaluator("pol", "tgt", nil, nil, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{
 			RequirementID: "REQ-1",
@@ -112,7 +138,7 @@ func TestGemaraLog_PassingAssessmentKeepsProviderMessage(t *testing.T) {
 
 func TestGemaraLog_PlanFieldPopulated(t *testing.T) {
 	reqToPlan := map[string]string{"req-1": "plan-1"}
-	eval := output.NewEvaluator("pol", "tgt", nil, reqToPlan, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, reqToPlan, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{RequirementID: "req-1", Steps: []provider.Step{{Result: provider.ResultPassed, Message: "ok"}}},
 	})
@@ -127,7 +153,7 @@ func TestGemaraLog_PlanFieldPopulated(t *testing.T) {
 }
 
 func TestGemaraLog_PlanFieldOmittedWhenNoMapping(t *testing.T) {
-	eval := output.NewEvaluator("pol", "tgt", nil, nil, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{RequirementID: "req-1", Steps: []provider.Step{{Result: provider.ResultPassed, Message: "ok"}}},
 	})
@@ -140,7 +166,7 @@ func TestGemaraLog_PlanFieldOmittedWhenNoMapping(t *testing.T) {
 
 func TestGemaraLog_PlanFieldOmittedForUnmappedRequirement(t *testing.T) {
 	reqToPlan := map[string]string{"other-req": "plan-99"}
-	eval := output.NewEvaluator("pol", "tgt", nil, reqToPlan, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, reqToPlan, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{RequirementID: "req-1", Steps: []provider.Step{{Result: provider.ResultPassed, Message: "ok"}}},
 	})
@@ -153,7 +179,7 @@ func TestGemaraLog_PlanFieldOmittedForUnmappedRequirement(t *testing.T) {
 
 func TestEvaluator_Write(t *testing.T) {
 	outDir := t.TempDir()
-	eval := output.NewEvaluator("test-policy", "target-1", nil, nil, "")
+	eval := output.NewEvaluator("test-policy", "target-1", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{RequirementID: "R1", Steps: []provider.Step{{Result: provider.ResultPassed, Message: "ok"}}},
 	})
@@ -167,7 +193,9 @@ func TestEvaluator_Write(t *testing.T) {
 func TestEvaluator_Write_StepIdentityWithComplypackRef(t *testing.T) {
 	outDir := t.TempDir()
 	reqToPlan := map[string]string{"req-1": "plan-1"}
-	eval := output.NewEvaluator("pol", "tgt", nil, reqToPlan, "registry.example.com/complypacks/opa@sha256:abc123")
+	complypackRefs := map[string]string{"opa": "registry.example.com/complypacks/opa@sha256:abc123"}
+	reqToEvaluator := map[string]string{"req-1": "opa"}
+	eval := output.NewEvaluator("pol", "tgt", nil, reqToPlan, complypackRefs, reqToEvaluator)
 	eval.AddTarget([]provider.AssessmentLog{
 		{
 			RequirementID: "req-1",
@@ -191,7 +219,7 @@ func TestEvaluator_Write_StepIdentityWithComplypackRef(t *testing.T) {
 
 func TestEvaluator_Write_StepIdentityWithoutComplypack(t *testing.T) {
 	outDir := t.TempDir()
-	eval := output.NewEvaluator("pol", "tgt", nil, nil, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{
 			RequirementID: "req-1",
@@ -213,7 +241,7 @@ func TestEvaluator_Write_StepIdentityWithoutComplypack(t *testing.T) {
 
 func TestEvaluator_Write_StepIdentityEmptyName(t *testing.T) {
 	outDir := t.TempDir()
-	eval := output.NewEvaluator("pol", "tgt", nil, nil, "")
+	eval := output.NewEvaluator("pol", "tgt", nil, nil, nil, nil)
 	eval.AddTarget([]provider.AssessmentLog{
 		{
 			RequirementID: "req-1",

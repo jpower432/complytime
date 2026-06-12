@@ -283,7 +283,8 @@ func (o *scanOptions) scanPolicy(ctx context.Context, cfg *complytime.WorkspaceC
 }
 
 func (o *scanOptions) executeScanPhase(ctx context.Context, cfg *complytime.WorkspaceConfig, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
-	if err := runScanAndReport(ctx, o.format, o.cacheDir, mgr, groups, cfg.Complypacks, policyTargets, repository, eid, graph, targetIDs, baseDir); err != nil {
+	complypackRefs := buildComplypackRefs(o.cacheDir, cfg.Complypacks)
+	if err := runScanAndReport(ctx, o.format, mgr, groups, complypackRefs, policyTargets, repository, eid, graph, targetIDs, baseDir); err != nil {
 		return err
 	}
 	return o.maybeExport(ctx, cfg, mgr, groups)
@@ -366,11 +367,11 @@ func ensureGenerated(ctx context.Context, cacheDir, baseDir string, mgr *provide
 // runScanAndReport executes the scan across all targets and processes the
 // combined output (reports + error checking). It delegates post-scan handling
 // to processScanOutput.
-func runScanAndReport(ctx context.Context, format string, cacheDir string, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, complypacks []complytime.PolicyEntry, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
+func runScanAndReport(ctx context.Context, format string, mgr *provider.Manager, groups map[string]policy.EvaluatorGroup, complypackRefs map[string]string, policyTargets []complytime.TargetConfig, repository, eid string, graph *policy.DependencyGraph, targetIDs []string, baseDir string) error {
 	reqToControl := extractReqToControlMap(graph)
 	planToReq := extractPlanToReqMap(graph)
 	reqToPlan := reverseMap(planToReq)
-	complypackRef := resolveComplypackRef(cacheDir, groups, complypacks)
+	reqToEvaluator := extractReqToEvaluator(groups)
 	targetsWithWorkspace := injectWorkspaceIntoTargets(policyTargets, baseDir)
 	scanOut, err := executeScan(ctx, mgr, groups, targetsWithWorkspace)
 	if err != nil {
@@ -378,17 +379,17 @@ func runScanAndReport(ctx context.Context, format string, cacheDir string, mgr *
 	}
 
 	resolveAssessmentIDs(scanOut.assessments, planToReq)
-	return processScanOutput(format, scanOut, repository, reqToControl, reqToPlan, complypackRef, policyTargets, eid, targetIDs, baseDir)
+	return processScanOutput(format, scanOut, repository, reqToControl, reqToPlan, complypackRefs, reqToEvaluator, policyTargets, eid, targetIDs, baseDir)
 }
 
 // processScanOutput handles post-scan output: prints operational warnings to
 // stderr, writes evaluation reports, and returns an error when operational
 // failures are present (triggering non-zero exit). Reports are always written
 // before the error return so partial results remain available.
-func processScanOutput(format string, scanOut *scanOutput, repository string, reqToControl, reqToPlan map[string]string, complypackRef string, policyTargets []complytime.TargetConfig, eid string, targetIDs []string, baseDir string) error {
+func processScanOutput(format string, scanOut *scanOutput, repository string, reqToControl, reqToPlan, complypackRefs, reqToEvaluator map[string]string, policyTargets []complytime.TargetConfig, eid string, targetIDs []string, baseDir string) error {
 	reportOperationalWarnings(scanOut.errors)
 
-	evaluators := buildEvaluators(repository, reqToControl, reqToPlan, complypackRef, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
+	evaluators := buildEvaluators(repository, reqToControl, reqToPlan, complypackRefs, reqToEvaluator, policyTargets, scanOut.assessments, scanOut.assessmentTargets)
 
 	outDir := filepath.Join(baseDir, complytime.WorkspaceDir, complytime.ScanOutputDir)
 	for _, eval := range evaluators {
@@ -423,10 +424,10 @@ func checkOperationalErrors(errors []string) error {
 	return nil
 }
 
-func buildEvaluators(repository string, reqToControl, reqToPlan map[string]string, complypackRef string, policyTargets []complytime.TargetConfig, allAssessments []provider.AssessmentLog, assessmentTargets []string) []*output.Evaluator {
+func buildEvaluators(repository string, reqToControl, reqToPlan, complypackRefs, reqToEvaluator map[string]string, policyTargets []complytime.TargetConfig, allAssessments []provider.AssessmentLog, assessmentTargets []string) []*output.Evaluator {
 	evaluators := make([]*output.Evaluator, 0, len(policyTargets))
 	for _, target := range policyTargets {
-		eval := output.NewEvaluator(repository, target.ID, reqToControl, reqToPlan, complypackRef)
+		eval := output.NewEvaluator(repository, target.ID, reqToControl, reqToPlan, complypackRefs, reqToEvaluator)
 		var targetAssessments []provider.AssessmentLog
 		for j, a := range allAssessments {
 			if assessmentTargets[j] == target.ID {
@@ -903,27 +904,36 @@ func reverseMap(m map[string]string) map[string]string {
 	return r
 }
 
-// resolveComplypackRef builds a complypack OCI reference string
-// (repository@digest) for the evaluator groups in this scan. Returns ""
-// if no complypack is cached for any evaluator in the groups.
-//
-// State.Complypacks entries include an EvaluatorID field (set during
-// complypack sync) which directly maps repositories to evaluator-ids.
-func resolveComplypackRef(cacheDir string, groups map[string]policy.EvaluatorGroup, complypacks []complytime.PolicyEntry) string {
+// buildComplypackRefs builds a map of evaluator-id → OCI reference
+// (repository@digest) from the complypacks configuration and cached state.
+// Returns an empty map when no complypacks are configured or state is unavailable.
+func buildComplypackRefs(cacheDir string, complypacks []complytime.PolicyEntry) map[string]string {
+	refs := make(map[string]string)
 	if len(complypacks) == 0 {
-		return ""
+		return refs
 	}
 	state, err := cache.LoadState(cacheDir)
 	if err != nil {
 		logger.Debug("failed to load cache state for complypack ref resolution", "error", err)
-		return ""
+		return refs
 	}
-	for evalID := range groups {
-		for repo, ps := range state.Complypacks {
-			if ps.Digest != "" && ps.EvaluatorID == evalID {
-				return repo + "@" + ps.Digest
-			}
+	for repo, ps := range state.Complypacks {
+		if ps.Digest != "" && ps.EvaluatorID != "" {
+			refs[ps.EvaluatorID] = repo + "@" + ps.Digest
 		}
 	}
-	return ""
+	return refs
+}
+
+// extractReqToEvaluator builds a requirement-ID → evaluator-ID mapping from
+// the evaluator groups. This allows resolving which complypack reference
+// applies to each assessment result.
+func extractReqToEvaluator(groups map[string]policy.EvaluatorGroup) map[string]string {
+	m := make(map[string]string)
+	for evalID, group := range groups {
+		for _, cfg := range group.Configs {
+			m[cfg.RequirementID] = evalID
+		}
+	}
+	return m
 }
