@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
       - name: Run test
@@ -33,7 +33,7 @@ jobs:
       contents: read
       pull-requests: read
     needs: generate-coverage
-    uses: complytime/org-infra/.github/workflows/reusable_sonarqube.yml@2c193416adbc621a64021ace52bf57114d703888 # v0.3.1
+    uses: complytime/org-infra/.github/workflows/reusable_sonarqube.yml@bbd7194995388f96dd28c0c0792d406c8a249140 # v0.4.0
     with:
       sonar_organization: ${{ vars.SONAR_ORGANIZATION }}
       sonar_project_key: ${{ vars.SONAR_PROJECT_KEY }}
