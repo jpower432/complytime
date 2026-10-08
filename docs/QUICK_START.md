@@ -302,7 +302,9 @@ complyctl scan --policy-id baseline
 ```
 
 There is no supported cache-import command. Manually seeding a policy layout
-does not populate `$XDG_DATA_HOME/complytime/state.json`, so `list` shows
+reduced metadata and digest information. Because `state.json` is not populated,
+the scanner cannot compare the seeded policy layout's digest against a prior
+generation record — generation artifacts are rebuilt on every scan invocation.
 reduced metadata and digest information and generation freshness cannot compare
 the seeded policy layout's digest. A seeded layout is not signature
 verification: configured verification runs with `complyctl get`, not during an
