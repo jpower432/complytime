@@ -300,7 +300,7 @@ Validate the pre-seeded layout on the disconnected system:
 complyctl list
 complyctl scan --policy-id baseline
 ```
-
+There is no supported cache-import command (see [#892](https://github.com/complytime/complyctl/issues/892)). Manually seeding a policy layout
 There is no supported cache-import command. Manually seeding a policy layout
 reduced metadata and digest information. Because `state.json` is not populated,
 the scanner cannot compare the seeded policy layout's digest against a prior
